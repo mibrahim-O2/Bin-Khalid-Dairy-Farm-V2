@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Phase 1 baseline: deny-all default. Every other collection is opened up
+// explicitly in later phases as it's introduced. See SYSTEM_ARCHITECTURE.md
+// for the full trust boundary this encodes:
+//   - Non-financial master data: client writes allowed, admin-authorized only.
+//   - Financial collections: `allow write: if false` always. All writes go
+//     through Server Actions using the Admin SDK, which bypasses these rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // /users/{uid}: self-read only. The `active` authorization gate is
+    // enforced via a custom claim on the Auth token (checked server-side in
+    // getServerSession), not read from this document, for latency reasons.
+    // Writes happen only through the admin script / future Server Actions.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Deny everything else by default until a phase explicitly opens it up.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
