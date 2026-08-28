@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
    * See: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
    */
   allowedDevOrigins: [],
+  images: {
+    // github.com/<user>.png redirects to avatars.githubusercontent.com —
+    // allow both so next/image can optimize the developer-credit avatar.
+    remotePatterns: [
+      { protocol: "https", hostname: "github.com" },
+      { protocol: "https", hostname: "avatars.githubusercontent.com" },
+    ],
+  },
 };
 
 export default nextConfig;
