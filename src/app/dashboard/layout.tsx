@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
 export default async function DashboardLayout({
   children,
@@ -16,5 +17,5 @@ export default async function DashboardLayout({
     redirect("/pending-approval");
   }
 
-  return <>{children}</>;
+  return <DashboardShell email={session.email}>{children}</DashboardShell>;
 }
