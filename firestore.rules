@@ -1,20 +1,50 @@
 rules_version = '2';
 
-// Phase 1 baseline: deny-all default. Every other collection is opened up
-// explicitly in later phases as it's introduced. See SYSTEM_ARCHITECTURE.md
-// for the full trust boundary this encodes:
+// Deny-all default. Every other collection is opened up explicitly as it's
+// introduced. See SYSTEM_ARCHITECTURE.md for the full trust boundary this
+// encodes:
 //   - Non-financial master data: client writes allowed, admin-authorized only.
 //   - Financial collections: `allow write: if false` always. All writes go
 //     through Server Actions using the Admin SDK, which bypasses these rules.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // /users/{uid}: self-read only. The `active` authorization gate is
-    // enforced via a custom claim on the Auth token (checked server-side in
-    // getServerSession), not read from this document, for latency reasons.
-    // Writes happen only through the admin script / future Server Actions.
+    // Authorization gate: `active: true` on the custom claim, checked
+    // directly off the Auth token (not a get() call) for latency, matching
+    // getServerSession() on the server side.
+    function isActiveAdmin() {
+      return request.auth != null && request.auth.token.active == true;
+    }
+
+    // /users/{uid}: self-read only. Writes happen only through the admin
+    // script / future Server Actions.
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // --- Non-financial master data (Phase 3) ---
+    match /customers/{customerId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /products/{productId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /customerRates/{rateId} {
+      allow read, write: if isActiveAdmin();
+
+      match /history/{historyId} {
+        allow read, write: if isActiveAdmin();
+      }
+    }
+
+    // --- Financial collections (Phase 3): read for authorized admins,
+    // write denied entirely — only Server Actions using the Admin SDK
+    // (which bypasses these rules) may create ledger transactions.
+    match /customerLedgerTransactions/{transactionId} {
+      allow read: if isActiveAdmin();
       allow write: if false;
     }
 
