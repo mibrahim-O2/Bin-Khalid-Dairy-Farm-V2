@@ -9,7 +9,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-heading);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +39,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Financial status colors — used consistently across all 3 ledgers (see DESIGN.md). */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  /* Sparing brand accent (badges, key numbers) — not the same as shadcn's generic `accent`. */
+  --color-brand-gold: var(--brand-gold);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,72 +56,85 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Bin Khalid Dairy Farm brand palette — see DESIGN.md. Deliberately flat
+     hex values (not oklch) so the exact brand hex codes stay traceable. */
+  --background: #faf7f0; /* warm ivory */
+  --foreground: #14231a; /* text primary */
+  --card: #ffffff;
+  --card-foreground: #14231a;
+  --popover: #ffffff;
+  --popover-foreground: #14231a;
+  --primary: #1b4332; /* deep forest green */
+  --primary-foreground: #faf7f0;
+  --secondary: #f1ece0;
+  --secondary-foreground: #14231a;
+  --muted: #f1ece0;
+  --muted-foreground: #5b6b60; /* text secondary */
+  --accent: #e8eee9; /* subtle green tint for hover/active surfaces */
+  --accent-foreground: #1b4332;
+  --destructive: #b23b3b;
+  --border: #d8ded5;
+  --input: #d8ded5;
+  --ring: #1b4332;
+  --success: #2e7d4f;
+  --success-foreground: #ffffff;
+  --warning: #c97a1b;
+  --warning-foreground: #ffffff;
+  --brand-gold: #c9a227;
+  --chart-1: #1b4332;
+  --chart-2: #2e7d4f;
+  --chart-3: #c9a227;
+  --chart-4: #c97a1b;
+  --chart-5: #5b6b60;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Nav uses Primary per DESIGN.md ("Primary — ... nav"). */
+  --sidebar: #1b4332;
+  --sidebar-foreground: #faf7f0;
+  --sidebar-primary: #c9a227;
+  --sidebar-primary-foreground: #0d2818;
+  --sidebar-accent: #24523e;
+  --sidebar-accent-foreground: #faf7f0;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #c9a227;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #0d2818;
+  --foreground: #faf7f0;
+  --card: #14312278;
+  --card-foreground: #faf7f0;
+  --popover: #14231a;
+  --popover-foreground: #faf7f0;
+  --primary: #c9a227;
+  --primary-foreground: #0d2818;
+  --secondary: #1b4332;
+  --secondary-foreground: #faf7f0;
+  --muted: #1b4332;
+  --muted-foreground: #b7c4bb;
+  --accent: #24523e;
+  --accent-foreground: #faf7f0;
+  --destructive: #d97a7a;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.15);
+  --ring: #c9a227;
+  --success: #4fae78;
+  --success-foreground: #0d2818;
+  --warning: #e0994a;
+  --warning-foreground: #0d2818;
+  --brand-gold: #c9a227;
+  --chart-1: #c9a227;
+  --chart-2: #4fae78;
+  --chart-3: #e0994a;
+  --chart-4: #d8ded5;
+  --chart-5: #b7c4bb;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #faf7f0;
+  --sidebar-primary: #c9a227;
+  --sidebar-primary-foreground: #0d2818;
+  --sidebar-accent: #1b4332;
+  --sidebar-accent-foreground: #faf7f0;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #c9a227;
 }
 
 @layer base {
