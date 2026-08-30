@@ -7,6 +7,7 @@ export type ServerSession = {
   uid: string;
   email: string | null;
   active: boolean;
+  role: string | null;
 };
 
 export async function getServerSession(): Promise<ServerSession | null> {
@@ -20,6 +21,7 @@ export async function getServerSession(): Promise<ServerSession | null> {
       uid: decoded.uid,
       email: decoded.email ?? null,
       active: decoded.active === true,
+      role: typeof decoded.role === "string" ? decoded.role : null,
     };
   } catch {
     return null;
