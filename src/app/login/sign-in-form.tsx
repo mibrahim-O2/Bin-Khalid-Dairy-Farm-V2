@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "./password-input";
+import { ForgotPasswordForm } from "./forgot-password-form";
 import { establishSession } from "./auth-helpers";
 
 export function SignInForm() {
@@ -15,6 +16,7 @@ export function SignInForm() {
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "/dashboard";
 
+  const [view, setView] = useState<"signin" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,10 @@ export function SignInForm() {
     }
   }
 
+  if (view === "forgot") {
+    return <ForgotPasswordForm onBack={() => setView("signin")} />;
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <form className="flex flex-col gap-4" onSubmit={handleEmailLogin}>
@@ -66,7 +72,16 @@ export function SignInForm() {
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <button
+              type="button"
+              onClick={() => setView("forgot")}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Forgot password?
+            </button>
+          </div>
           <PasswordInput
             id="password"
             autoComplete="current-password"
