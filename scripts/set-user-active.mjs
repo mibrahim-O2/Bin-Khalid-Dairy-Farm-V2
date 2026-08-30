@@ -1,6 +1,13 @@
 // One-off admin tool: activates a user by setting the `active: true` custom
-// claim (the authorization gate checked by getServerSession) and mirrors
-// basic profile info onto /users/{uid} for reference.
+// claim (the authorization gate checked by getServerSession) plus an
+// explicit `admin` role claim, and mirrors basic profile info onto
+// /users/{uid} for reference. This is also how the very first account (the
+// Owner) gets activated — Owner-ness itself is never a stored claim, it's
+// re-derived from OWNER_UID/OWNER_EMAIL (see src/lib/auth/owner.ts) — so an
+// owner activated here still just gets the same `active` + `admin` claims
+// everyone else does; being the Owner is layered on top of that, not
+// instead of it. Once the Owner has dashboard access, other pending sign-ups
+// can be approved from the in-app Pending Users page instead of this script.
 //
 // Usage:
 //   node scripts/set-user-active.mjs someone@example.com
@@ -65,6 +72,7 @@ const userRecord = await auth.getUserByEmail(email);
 await auth.setCustomUserClaims(userRecord.uid, {
   ...userRecord.customClaims,
   active: true,
+  role: "admin",
 });
 
 await db.doc(`users/${userRecord.uid}`).set(
@@ -72,6 +80,7 @@ await db.doc(`users/${userRecord.uid}`).set(
     email: userRecord.email ?? null,
     displayName: userRecord.displayName ?? null,
     active: true,
+    role: "admin",
     updatedAt: new Date().toISOString(),
   },
   { merge: true }
