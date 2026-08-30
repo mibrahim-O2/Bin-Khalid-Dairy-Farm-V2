@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
 export default async function DashboardLayout({
@@ -17,5 +18,9 @@ export default async function DashboardLayout({
     redirect("/pending-approval");
   }
 
-  return <DashboardShell email={session.email}>{children}</DashboardShell>;
+  return (
+    <DashboardShell email={session.email} isOwner={isOwnerSession(session)}>
+      {children}
+    </DashboardShell>
+  );
 }

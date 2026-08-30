@@ -9,12 +9,13 @@ import { Wordmark } from "@/components/wordmark";
 import { LogoutButton } from "@/components/logout-button";
 import { navItems } from "@/components/dashboard/nav-items";
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavLinks({ isOwner, onNavigate }: { isOwner: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const visibleItems = navItems.filter((item) => !item.ownerOnly || isOwner);
 
   return (
     <nav className="flex flex-1 flex-col gap-1 px-3">
-      {navItems.map(({ href, label, icon: Icon }) => {
+      {visibleItems.map(({ href, label, icon: Icon }) => {
         const isActive = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
         return (
           <Link
@@ -39,9 +40,11 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function DashboardShell({
   email,
+  isOwner,
   children,
 }: {
   email: string | null;
+  isOwner: boolean;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -53,7 +56,7 @@ export function DashboardShell({
         <div className="px-4 pb-4">
           <Wordmark onDark />
         </div>
-        <NavLinks />
+        <NavLinks isOwner={isOwner} />
         <div className="mt-auto px-4 pt-4">
           <p className="mb-2 truncate text-xs text-sidebar-foreground/60">{email}</p>
           <LogoutButton />
@@ -81,7 +84,7 @@ export function DashboardShell({
                 <X className="size-5" />
               </button>
             </div>
-            <NavLinks onNavigate={() => setMobileOpen(false)} />
+            <NavLinks isOwner={isOwner} onNavigate={() => setMobileOpen(false)} />
             <div className="mt-auto px-4 pt-4">
               <p className="mb-2 truncate text-xs text-sidebar-foreground/60">{email}</p>
               <LogoutButton />
