@@ -39,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Bill, BillLineItem, BillStatus } from "@/types/bill";
+import { getBillPaymentStatus, type Bill, type BillLineItem, type BillPaymentStatus, type BillStatus } from "@/types/bill";
 import type { Customer, CustomerRate, Product } from "@/types/customer";
 import { finalizeBill } from "../actions";
 import { VoidBillDialog } from "./void-bill-dialog";
@@ -48,6 +48,20 @@ const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive">
   draft: "secondary",
   finalized: "default",
   void: "destructive",
+};
+
+// Matches DESIGN.md's financial status colors: Paid = success green,
+// Partially Paid = warning gold-orange, Unpaid = neutral outline.
+const paymentStatusClassName: Record<BillPaymentStatus, string> = {
+  unpaid: "",
+  partial: "border-transparent bg-warning text-warning-foreground",
+  paid: "border-transparent bg-success text-success-foreground",
+};
+
+const paymentStatusLabel: Record<BillPaymentStatus, string> = {
+  unpaid: "Unpaid",
+  partial: "Partially Paid",
+  paid: "Paid",
 };
 
 export default function BillDetailPage() {
@@ -278,6 +292,11 @@ export default function BillDetailPage() {
           <Badge variant={statusVariant[bill.status]} className="capitalize">
             {bill.status}
           </Badge>
+          {bill.status === "finalized" ? (
+            <Badge className={paymentStatusClassName[getBillPaymentStatus(bill)]}>
+              {paymentStatusLabel[getBillPaymentStatus(bill)]}
+            </Badge>
+          ) : null}
         </div>
         {bill.replacesBillId ? (
           <p className="mt-1 text-sm text-muted-foreground">
@@ -532,6 +551,12 @@ export default function BillDetailPage() {
               {formatAmount(isDraft ? customer.balance : (bill.previousBalance ?? 0))}
             </span>
           </div>
+          {!isDraft ? (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount paid</span>
+              <span className="font-medium text-success">{formatAmount(bill.amountPaid)}</span>
+            </div>
+          ) : null}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
             <span className="font-medium text-foreground">Total payable</span>
             <span className="font-heading font-bold text-foreground">

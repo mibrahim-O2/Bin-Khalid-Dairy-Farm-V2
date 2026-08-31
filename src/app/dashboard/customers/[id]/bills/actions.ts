@@ -216,6 +216,7 @@ export async function voidBill(input: {
           subtotal: bill.subtotal,
           previousBalance: null,
           totalPayable: null,
+          amountPaid: 0,
           note: bill.note ?? null,
           createdAt: now,
           updatedAt: now,
