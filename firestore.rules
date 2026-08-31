@@ -71,6 +71,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- Payments & allocations (Phase 5): financial, same as
+    // customerLedgerTransactions — read for authorized admins, write denied
+    // entirely. Only the recordCustomerPayment Server Action creates these.
+    match /payments/{paymentId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
+    match /paymentAllocations/{allocationId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
     // Deny everything else by default until a phase explicitly opens it up.
     match /{document=**} {
       allow read, write: if false;
