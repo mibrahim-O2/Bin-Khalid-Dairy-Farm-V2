@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "../customer-form-dialog";
 import { RateManager } from "./rate-manager";
 import { OpeningBalanceCard } from "./opening-balance-card";
+import { BillsList } from "./bills-list";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -32,7 +33,7 @@ export default function CustomerDetailPage() {
     const db = getFirebaseDb();
     await updateDoc(doc(db, "customers", customer.id), {
       active: !customer.active,
-      updatedAt: serverTimestamp(),
+      updatedAt: new Date().toISOString(),
     });
   }
 
@@ -120,6 +121,8 @@ export default function CustomerDetailPage() {
       </div>
 
       <OpeningBalanceCard customerId={customer.id} hasOpeningBalance={customer.hasOpeningBalance} />
+
+      <BillsList customerId={customer.id} />
 
       <Card>
         <CardHeader>
