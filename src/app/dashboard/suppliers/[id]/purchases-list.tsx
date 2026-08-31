@@ -1,0 +1,178 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { addDoc, collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatAmount } from "@/lib/format-number";
+import { formatDate } from "@/lib/format-date";
+import {
+  getPurchasePaymentStatus,
+  type Purchase,
+  type PurchasePaymentStatus,
+  type PurchaseStatus,
+} from "@/types/purchase";
+
+const statusVariant: Record<PurchaseStatus, "default" | "secondary" | "destructive"> = {
+  draft: "secondary",
+  finalized: "default",
+  void: "destructive",
+};
+
+// Matches DESIGN.md's financial status colors: Paid = success green,
+// Partially Paid = warning gold-orange, Unpaid = neutral outline.
+const paymentStatusClassName: Record<PurchasePaymentStatus, string> = {
+  unpaid: "",
+  partial: "border-transparent bg-warning text-warning-foreground",
+  paid: "border-transparent bg-success text-success-foreground",
+};
+
+const paymentStatusLabel: Record<PurchasePaymentStatus, string> = {
+  unpaid: "Unpaid",
+  partial: "Partially Paid",
+  paid: "Paid",
+};
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function PurchasesList({ supplierId }: { supplierId: string }) {
+  const router = useRouter();
+  const { user } = useCurrentUser();
+  const [purchases, setPurchases] = useState<Purchase[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const db = getFirebaseDb();
+    const q = query(
+      collection(db, "purchases"),
+      where("supplierId", "==", supplierId),
+      orderBy("createdAt", "desc")
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        setPurchases(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Purchase));
+      },
+      () => setError("Failed to load purchases. Try refreshing the page.")
+    );
+  }, [supplierId, user]);
+
+  async function handleNewPurchase() {
+    if (!user) return;
+    setCreating(true);
+    try {
+      const db = getFirebaseDb();
+      const now = new Date().toISOString();
+      const ref = await addDoc(collection(db, "purchases"), {
+        supplierId,
+        status: "draft",
+        purchaseDate: todayIso(),
+        lineItems: [],
+        subtotal: 0,
+        previousBalance: null,
+        totalPayable: null,
+        amountPaid: 0,
+        note: null,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: user.uid,
+        finalizedAt: null,
+        finalizedBy: null,
+        voidedAt: null,
+        voidedBy: null,
+        voidReason: null,
+        replacesPurchaseId: null,
+        replacedByPurchaseId: null,
+      });
+      router.push(`/dashboard/suppliers/${supplierId}/purchases/${ref.id}`);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-heading text-lg font-semibold text-foreground">Purchases</h2>
+          <Button size="sm" disabled={creating || !user} onClick={handleNewPurchase}>
+            New purchase
+          </Button>
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Payment</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {purchases === null ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    Loading…
+                  </TableCell>
+                </TableRow>
+              ) : purchases.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    No purchases yet.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                purchases.map((purchase) => (
+                  <TableRow key={purchase.id}>
+                    <TableCell className="font-medium text-foreground">
+                      <Link
+                        href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
+                        className="hover:underline"
+                      >
+                        {formatDate(purchase.purchaseDate)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatAmount(purchase.subtotal)}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant[purchase.status]} className="capitalize">
+                        {purchase.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {purchase.status === "finalized" ? (
+                        <Badge className={paymentStatusClassName[getPurchasePaymentStatus(purchase)]}>
+                          {paymentStatusLabel[getPurchasePaymentStatus(purchase)]}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
