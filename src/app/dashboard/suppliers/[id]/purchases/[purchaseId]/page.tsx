@@ -339,6 +339,7 @@ export default function PurchaseDetailPage() {
                             step="0.01"
                             value={line.rate}
                             className="w-24"
+                            aria-label="Rate"
                             onChange={(e) => updateLine(index, { rate: Number(e.target.value) || 0 })}
                           />
                         ) : (
@@ -353,6 +354,7 @@ export default function PurchaseDetailPage() {
                             step="0.01"
                             value={line.quantity}
                             className="w-24"
+                            aria-label="Quantity"
                             onChange={(e) =>
                               updateLine(index, { quantity: Number(e.target.value) || 0 })
                             }
