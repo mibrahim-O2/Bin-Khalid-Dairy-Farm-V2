@@ -309,19 +309,35 @@ const deleteCustomerSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
+// Firestore caps a single transaction/batch at 500 writes. Leave headroom
+// for the customer-doc delete + the activityLogs write that always
+// accompany the purged records.
+const TRANSACTION_SAFE_OP_LIMIT = 480;
+
 /**
- * Permanently deletes a customer's master-data record and rate schedule —
- * Owner-only, and re-verified here regardless of what the UI hides. This is
- * a deliberate exception to the project's usual "archive, never delete"
- * rule for customers, requested explicitly by the Owner.
+ * Permanently deletes a customer AND their entire financial trail — bills
+ * (every status), payments (including voided ones), payment allocations,
+ * customerLedgerTransactions (this covers opening-balance entries too:
+ * they're just a ledger transaction with type "opening_balance", not a
+ * separate collection), and the rate schedule (+ history).
  *
- * It does NOT touch that customer's bills, payments, or
- * customerLedgerTransactions — those are financial records and
- * SYSTEM_ARCHITECTURE.md's rule 1 ("never hard-delete a finalized
- * financial record") is non-negotiable regardless of who's asking. They
- * remain in Firestore, permanently, just no longer joined to a live
- * customer document. The deletion itself is recorded in activityLogs so
- * there's still an audit trail after the customer record is gone.
+ * This is a DELIBERATE, EXPLICIT exception to SYSTEM_ARCHITECTURE.md's
+ * "never hard-delete a finalized financial record" rule — confirmed by the
+ * Owner specifically for this feature, because it's Owner-only, requires
+ * confirmation, and is meant to fully remove a customer rather than
+ * preserve an orphaned trail. Do not extend this pattern to any other
+ * delete path without the same explicit sign-off.
+ *
+ * Atomicity: when everything fits under Firestore's ~500-operation limit
+ * (the overwhelmingly common case for a single customer), this all happens
+ * in one transaction — genuinely atomic, fully succeeds or fully fails.
+ * A customer with an extraordinary volume of history that exceeds that
+ * limit falls back to sequential batches; Firestore has no primitive for
+ * true atomicity beyond ~500 ops, so that path is instead deliberately
+ * ordered to stay safely retriable — every financial record is deleted
+ * before the customer document itself, so a failure partway through still
+ * leaves the customer doc in place (nothing orphaned with no customer to
+ * identify it), and simply re-running the delete finishes the job.
  */
 export async function deleteCustomer(input: {
   customerId: string;
@@ -351,31 +367,67 @@ export async function deleteCustomer(input: {
     }
     const customer = customerSnap.data() as { name: string };
 
-    const batch = db.batch();
+    const byCustomerId = (collection: string) =>
+      db.collection(collection).where("customerId", "==", customerId).get();
 
-    const ratesSnap = await db
-      .collection("customerRates")
-      .where("customerId", "==", customerId)
-      .get();
-    for (const rateDoc of ratesSnap.docs) {
-      const historySnap = await rateDoc.ref.collection("history").get();
-      for (const historyDoc of historySnap.docs) batch.delete(historyDoc.ref);
-      batch.delete(rateDoc.ref);
-    }
+    const [billsSnap, paymentsSnap, allocationsSnap, ledgerSnap, ratesSnap] = await Promise.all([
+      byCustomerId("bills"),
+      byCustomerId("payments"),
+      byCustomerId("paymentAllocations"),
+      byCustomerId("customerLedgerTransactions"),
+      byCustomerId("customerRates"),
+    ]);
+    const rateHistorySnaps = await Promise.all(
+      ratesSnap.docs.map((rateDoc) => rateDoc.ref.collection("history").get())
+    );
 
-    batch.delete(customerRef);
+    const refsToDelete = [
+      ...billsSnap.docs.map((d) => d.ref),
+      ...paymentsSnap.docs.map((d) => d.ref),
+      ...allocationsSnap.docs.map((d) => d.ref),
+      ...ledgerSnap.docs.map((d) => d.ref),
+      ...ratesSnap.docs.map((d) => d.ref),
+      ...rateHistorySnaps.flatMap((snap) => snap.docs.map((d) => d.ref)),
+    ];
 
     const now = new Date().toISOString();
-    batch.set(db.collection("activityLogs").doc(), {
+    const logRef = db.collection("activityLogs").doc();
+    const logData = {
       action: "customer_deleted",
       customerId,
       customerName: customer.name,
       reason: reason ?? null,
       performedBy: { uid: session.uid, email: session.email },
       createdAt: now,
-    });
+      purgedCounts: {
+        bills: billsSnap.size,
+        payments: paymentsSnap.size,
+        paymentAllocations: allocationsSnap.size,
+        ledgerTransactions: ledgerSnap.size,
+        customerRates: ratesSnap.size,
+      },
+    };
 
-    await batch.commit();
+    if (refsToDelete.length + 2 <= TRANSACTION_SAFE_OP_LIMIT) {
+      await db.runTransaction(async (tx) => {
+        for (const ref of refsToDelete) tx.delete(ref);
+        tx.delete(customerRef);
+        tx.set(logRef, logData);
+      });
+    } else {
+      for (let i = 0; i < refsToDelete.length; i += TRANSACTION_SAFE_OP_LIMIT) {
+        const batch = db.batch();
+        for (const ref of refsToDelete.slice(i, i + TRANSACTION_SAFE_OP_LIMIT)) {
+          batch.delete(ref);
+        }
+        await batch.commit();
+      }
+      const finalBatch = db.batch();
+      finalBatch.delete(customerRef);
+      finalBatch.set(logRef, logData);
+      await finalBatch.commit();
+    }
+
     return { ok: true };
   } catch (err) {
     return {

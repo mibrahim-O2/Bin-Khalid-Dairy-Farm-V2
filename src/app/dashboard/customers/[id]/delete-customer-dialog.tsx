@@ -50,9 +50,8 @@ export function DeleteCustomerDialog({
         <DialogHeader>
           <DialogTitle>Permanently delete {customerName}?</DialogTitle>
           <DialogDescription>
-            This cannot be undone. {customerName}&apos;s profile and rate schedule will be gone
-            for good. Their bills, payments, and ledger history are never deleted — they&apos;ll
-            remain in the system for the record, just without a linked customer.
+            This will permanently delete {customerName} <strong>and all their bills, payments,
+            and ledger history</strong>. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
