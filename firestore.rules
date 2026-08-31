@@ -142,6 +142,50 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // --- Employees & salary (Phase 7) — mirrors the customer/supplier
+    // domain, but see SYSTEM_ARCHITECTURE.md §4 Domain C for the reversed
+    // credit/debit sign convention.
+    match /employees/{employeeId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    // Who an advance/payment was "given by" — non-financial master data,
+    // same trust level as farmSupplyItems/products.
+    match /authorizedPeople/{personId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    // Effective-dated salary history — non-financial master data (it's a
+    // rate that will apply prospectively, same trust level as
+    // customerRates), append-only in application code but not enforced
+    // here since a correction to a just-added entry (e.g. wrong date typo)
+    // shouldn't require a full void+reason ceremony the way a posted
+    // financial record does.
+    match /employeeSalaryHistory/{historyId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /employeeLedgerTransactions/{transactionId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
+    match /employeeSalaryAccruals/{accrualId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
+    match /employeePayments/{paymentId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
+    // Generated monthly statement snapshots — immutable once created.
+    match /employeeStatements/{statementId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
     // Deny everything else by default until a phase explicitly opens it up.
     match /{document=**} {
       allow read, write: if false;
