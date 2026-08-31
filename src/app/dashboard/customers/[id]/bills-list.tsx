@@ -19,12 +19,26 @@ import {
 } from "@/components/ui/table";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
-import type { Bill, BillStatus } from "@/types/bill";
+import { getBillPaymentStatus, type Bill, type BillPaymentStatus, type BillStatus } from "@/types/bill";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
   finalized: "default",
   void: "destructive",
+};
+
+// Matches DESIGN.md's financial status colors: Paid = success green,
+// Partially Paid = warning gold-orange, Unpaid = neutral outline.
+const paymentStatusClassName: Record<BillPaymentStatus, string> = {
+  unpaid: "",
+  partial: "border-transparent bg-warning text-warning-foreground",
+  paid: "border-transparent bg-success text-success-foreground",
+};
+
+const paymentStatusLabel: Record<BillPaymentStatus, string> = {
+  unpaid: "Unpaid",
+  partial: "Partially Paid",
+  paid: "Paid",
 };
 
 function todayIso() {
@@ -80,6 +94,7 @@ export function BillsList({ customerId }: { customerId: string }) {
         subtotal: 0,
         previousBalance: null,
         totalPayable: null,
+        amountPaid: 0,
         note: null,
         createdAt: now,
         updatedAt: now,
@@ -116,18 +131,19 @@ export function BillsList({ customerId }: { customerId: string }) {
                 <TableHead>Period</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Payment</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {bills === null ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : bills.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     No bills yet.
                   </TableCell>
                 </TableRow>
@@ -150,6 +166,15 @@ export function BillsList({ customerId }: { customerId: string }) {
                       <Badge variant={statusVariant[bill.status]} className="capitalize">
                         {bill.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {bill.status === "finalized" ? (
+                        <Badge className={paymentStatusClassName[getBillPaymentStatus(bill)]}>
+                          {paymentStatusLabel[getBillPaymentStatus(bill)]}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
