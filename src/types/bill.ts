@@ -58,9 +58,16 @@ export type Bill = {
 
 export type BillPaymentStatus = "unpaid" | "partial" | "paid";
 
-/** Only meaningful for a finalized bill — always derived, never stored. */
+/**
+ * Only meaningful for a finalized bill — always derived, never stored.
+ * `amountPaid` defaults to 0 here because bills finalized before this field
+ * existed have no `amountPaid` at all in Firestore — without the default,
+ * `undefined <= 0`/`undefined >= subtotal` are both false in JS, silently
+ * misreporting those legacy bills as "partial" instead of "unpaid".
+ */
 export function getBillPaymentStatus(bill: Pick<Bill, "subtotal" | "amountPaid">): BillPaymentStatus {
-  if (bill.amountPaid <= 0) return "unpaid";
-  if (bill.amountPaid >= bill.subtotal) return "paid";
+  const amountPaid = bill.amountPaid ?? 0;
+  if (amountPaid <= 0) return "unpaid";
+  if (amountPaid >= bill.subtotal) return "paid";
   return "partial";
 }

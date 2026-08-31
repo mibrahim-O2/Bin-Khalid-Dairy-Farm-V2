@@ -554,7 +554,7 @@ export default function BillDetailPage() {
           {!isDraft ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount paid</span>
-              <span className="font-medium text-success">{formatAmount(bill.amountPaid)}</span>
+              <span className="font-medium text-success">{formatAmount(bill.amountPaid ?? 0)}</span>
             </div>
           ) : null}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">

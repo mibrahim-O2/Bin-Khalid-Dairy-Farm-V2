@@ -113,7 +113,14 @@ export async function recordCustomerPayment(input: {
 
   const parsed = recordPaymentSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: "Invalid input." };
+    // Zod already rejects NaN/undefined/zero/negative amounts here — this
+    // (and the client-side check in RecordPaymentDialog) is what stops a
+    // bad amount before any Firestore write is even attempted.
+    const amountIssue = parsed.error.issues.some((issue) => issue.path[0] === "amount");
+    return {
+      ok: false,
+      error: amountIssue ? "Enter a valid payment amount greater than zero." : "Invalid input.",
+    };
   }
   const { customerId, amount, method, note } = parsed.data;
 
@@ -166,9 +173,14 @@ export async function recordCustomerPayment(input: {
       let remaining = amount;
       for (const billDoc of outstandingBillsSnap.docs) {
         if (remaining <= 0) break;
-        const bill = billDoc.data() as { subtotal: number; amountPaid: number };
-        const due = Math.round((bill.subtotal - bill.amountPaid) * 100) / 100;
-        if (due <= 0) continue;
+        const bill = billDoc.data() as { subtotal: number; amountPaid?: number };
+        // Bills finalized before `amountPaid` existed have no such field in
+        // Firestore at all — without this default, `subtotal - undefined`
+        // is NaN, and `NaN <= 0` is false, so the skip-guard below never
+        // fires and a NaN reaches FieldValue.increment() further down.
+        const amountPaidSoFar = bill.amountPaid ?? 0;
+        const due = Math.round((bill.subtotal - amountPaidSoFar) * 100) / 100;
+        if (!Number.isFinite(due) || due <= 0) continue;
 
         const allocation = Math.min(remaining, due);
         tx.update(billDoc.ref, {
