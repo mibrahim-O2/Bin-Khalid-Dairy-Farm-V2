@@ -55,10 +55,12 @@ export type CustomerLedgerDirection = "debit" | "credit";
 export type CustomerLedgerTransaction = {
   id: string;
   customerId: string;
-  type: "opening_balance"; // more types added in Phase 4/5 (bill, payment, adjustment, void)
+  type: "opening_balance" | "bill" | "bill_void"; // more types added in Phase 5 (payment, adjustment)
   direction: CustomerLedgerDirection;
   amount: number;
   note: string;
   createdAt: string;
   createdBy: { uid: string; email: string | null };
+  /** Present on "bill"/"bill_void" entries — links the ledger entry back to its bill. */
+  billId?: string;
 };
