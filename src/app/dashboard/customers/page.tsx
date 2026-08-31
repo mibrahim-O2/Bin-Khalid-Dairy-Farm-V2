@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,11 +24,16 @@ import { CustomerFormDialog } from "./customer-form-dialog";
 
 export default function CustomersPage() {
   const router = useRouter();
+  // Wait for the Firebase client SDK's own auth state — otherwise this can
+  // lose a race against auth rehydration on a fresh page load and fail with
+  // permission-denied.
+  const { user } = useCurrentUser();
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
     const q = query(collection(db, "customers"), orderBy("name"));
     const unsubscribe = onSnapshot(
@@ -38,7 +44,7 @@ export default function CustomersPage() {
       () => setError("Failed to load customers. Check your connection.")
     );
     return unsubscribe;
-  }, []);
+  }, [user]);
 
   const filtered = useMemo(() => {
     if (!customers) return null;

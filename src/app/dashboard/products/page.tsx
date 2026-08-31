@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,10 +19,15 @@ import type { Product } from "@/types/customer";
 import { ProductFormDialog } from "./product-form-dialog";
 
 export default function ProductsPage() {
+  // Wait for the Firebase client SDK's own auth state — otherwise this can
+  // lose a race against auth rehydration on a fresh page load and fail with
+  // permission-denied.
+  const { user } = useCurrentUser();
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
     const q = query(collection(db, "products"), orderBy("name"));
     const unsubscribe = onSnapshot(
@@ -34,7 +40,7 @@ export default function ProductsPage() {
       () => setError("Failed to load products. Check your connection.")
     );
     return unsubscribe;
-  }, []);
+  }, [user]);
 
   async function toggleActive(product: Product) {
     const db = getFirebaseDb();

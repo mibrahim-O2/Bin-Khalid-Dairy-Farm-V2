@@ -139,35 +139,54 @@ function RateEditDialog({
 }
 
 export function RateManager({ customerId }: { customerId: string }) {
+  // Wait for the Firebase client SDK's own auth state — otherwise these can
+  // lose a race against auth rehydration on a fresh page load and fail with
+  // permission-denied (and silently leave rates empty, so bills would fall
+  // back to a product's default rate instead of this customer's real one).
+  const { user } = useCurrentUser();
   const [products, setProducts] = useState<Product[] | null>(null);
   const [rates, setRates] = useState<Record<string, CustomerRate>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
     const productsQuery = query(
       collection(db, "products"),
       where("active", "==", true),
       orderBy("name")
     );
-    const unsubProducts = onSnapshot(productsQuery, (snapshot) => {
-      setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product));
-    });
+    const unsubProducts = onSnapshot(
+      productsQuery,
+      (snapshot) => {
+        setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product));
+      },
+      () => setError("Failed to load products. Try refreshing the page.")
+    );
 
     const ratesQuery = query(collection(db, "customerRates"), where("customerId", "==", customerId));
-    const unsubRates = onSnapshot(ratesQuery, (snapshot) => {
-      const next: Record<string, CustomerRate> = {};
-      for (const d of snapshot.docs) {
-        const rate = { id: d.id, ...d.data() } as CustomerRate;
-        next[rate.productId] = rate;
-      }
-      setRates(next);
-    });
+    const unsubRates = onSnapshot(
+      ratesQuery,
+      (snapshot) => {
+        const next: Record<string, CustomerRate> = {};
+        for (const d of snapshot.docs) {
+          const rate = { id: d.id, ...d.data() } as CustomerRate;
+          next[rate.productId] = rate;
+        }
+        setRates(next);
+      },
+      () => setError("Failed to load customer rates. Try refreshing the page.")
+    );
 
     return () => {
       unsubProducts();
       unsubRates();
     };
-  }, [customerId]);
+  }, [customerId, user]);
+
+  if (error) {
+    return <p className="text-sm text-destructive">{error}</p>;
+  }
 
   return (
     <div className="overflow-x-auto">

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +27,12 @@ export function OpeningBalanceCard({
   customerId: string;
   hasOpeningBalance: boolean;
 }) {
+  // Wait for the Firebase client SDK's own auth state — otherwise this can
+  // lose a race against auth rehydration on a fresh page load and fail with
+  // permission-denied, leaving this card stuck on "Loading…" forever.
+  const { user } = useCurrentUser();
   const [entry, setEntry] = useState<CustomerLedgerTransaction | null>(null);
+  const [listenerError, setListenerError] = useState<string | null>(null);
   const [direction, setDirection] = useState<CustomerLedgerDirection>("debit");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -34,7 +40,7 @@ export function OpeningBalanceCard({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasOpeningBalance) return;
+    if (!hasOpeningBalance || !user) return;
     const db = getFirebaseDb();
     const q = query(
       collection(db, "customerLedgerTransactions"),
@@ -42,11 +48,15 @@ export function OpeningBalanceCard({
       where("type", "==", "opening_balance"),
       limit(1)
     );
-    return onSnapshot(q, (snapshot) => {
-      const doc = snapshot.docs[0];
-      setEntry(doc ? ({ id: doc.id, ...doc.data() } as CustomerLedgerTransaction) : null);
-    });
-  }, [customerId, hasOpeningBalance]);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const doc = snapshot.docs[0];
+        setEntry(doc ? ({ id: doc.id, ...doc.data() } as CustomerLedgerTransaction) : null);
+      },
+      () => setListenerError("Failed to load the opening balance. Try refreshing the page.")
+    );
+  }, [customerId, hasOpeningBalance, user]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -81,7 +91,9 @@ export function OpeningBalanceCard({
           <CardTitle>Opening balance</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          {entry ? (
+          {listenerError ? (
+            <p className="text-destructive">{listenerError}</p>
+          ) : entry ? (
             <>
               <p className="text-foreground">
                 {entry.direction === "debit" ? "Customer owed" : "Customer had credit of"}{" "}

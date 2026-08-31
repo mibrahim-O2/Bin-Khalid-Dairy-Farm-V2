@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { calculateDays, calculateLineTotals, calculateSubtotal } from "@/lib/billing";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
@@ -52,6 +53,13 @@ const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive">
 export default function BillDetailPage() {
   const params = useParams<{ id: string; billId: string }>();
   const { id: customerId, billId } = params;
+  // The dashboard layout's server-side auth check doesn't mean the Firebase
+  // client SDK's own auth state has attached yet on this page load — direct
+  // client Firestore reads (all the onSnapshot calls below) need it too, or
+  // they can lose a race against auth rehydration and fail with
+  // permission-denied on a fresh page load (e.g. a hard refresh). Wait for
+  // it before subscribing to anything.
+  const { user } = useCurrentUser();
 
   const [bill, setBill] = useState<Bill | null | undefined>(undefined);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -71,43 +79,63 @@ export default function BillDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
-    return onSnapshot(doc(db, "bills", billId), (snap) => {
-      setBill(snap.exists() ? ({ id: snap.id, ...snap.data() } as Bill) : null);
-    });
-  }, [billId]);
+    return onSnapshot(
+      doc(db, "bills", billId),
+      (snap) => {
+        setBill(snap.exists() ? ({ id: snap.id, ...snap.data() } as Bill) : null);
+      },
+      () => setError("Failed to load this bill. Try refreshing the page.")
+    );
+  }, [billId, user]);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
-    return onSnapshot(doc(db, "customers", customerId), (snap) => {
-      setCustomer(snap.exists() ? ({ id: snap.id, ...snap.data() } as Customer) : null);
-    });
-  }, [customerId]);
+    return onSnapshot(
+      doc(db, "customers", customerId),
+      (snap) => {
+        setCustomer(snap.exists() ? ({ id: snap.id, ...snap.data() } as Customer) : null);
+      },
+      () => setError("Failed to load the customer. Try refreshing the page.")
+    );
+  }, [customerId, user]);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
     const productsQuery = query(
       collection(db, "products"),
       where("active", "==", true),
       orderBy("name")
     );
-    return onSnapshot(productsQuery, (snapshot) => {
-      setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product));
-    });
-  }, []);
+    return onSnapshot(
+      productsQuery,
+      (snapshot) => {
+        setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product));
+      },
+      () => setError("Failed to load products. Try refreshing the page.")
+    );
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
     const ratesQuery = query(collection(db, "customerRates"), where("customerId", "==", customerId));
-    return onSnapshot(ratesQuery, (snapshot) => {
-      const next: Record<string, CustomerRate> = {};
-      for (const d of snapshot.docs) {
-        const rate = { id: d.id, ...d.data() } as CustomerRate;
-        next[rate.productId] = rate;
-      }
-      setRates(next);
-    });
-  }, [customerId]);
+    return onSnapshot(
+      ratesQuery,
+      (snapshot) => {
+        const next: Record<string, CustomerRate> = {};
+        for (const d of snapshot.docs) {
+          const rate = { id: d.id, ...d.data() } as CustomerRate;
+          next[rate.productId] = rate;
+        }
+        setRates(next);
+      },
+      () => setError("Failed to load customer rates. Try refreshing the page.")
+    );
+  }, [customerId, user]);
 
   // Initialize the local editable copy once we first load this bill.
   useEffect(() => {

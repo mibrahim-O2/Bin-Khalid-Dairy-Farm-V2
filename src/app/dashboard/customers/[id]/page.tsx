@@ -6,6 +6,7 @@ import Link from "next/link";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,14 +20,25 @@ import { BillsList } from "./bills-list";
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
   const customerId = params.id;
+  // Wait for the Firebase client SDK's own auth state (separate from the
+  // server session cookie) before subscribing — otherwise this can lose a
+  // race against auth rehydration on a fresh page load and fail with
+  // permission-denied.
+  const { user } = useCurrentUser();
   const [customer, setCustomer] = useState<Customer | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     const db = getFirebaseDb();
-    return onSnapshot(doc(db, "customers", customerId), (snap) => {
-      setCustomer(snap.exists() ? ({ id: snap.id, ...snap.data() } as Customer) : null);
-    });
-  }, [customerId]);
+    return onSnapshot(
+      doc(db, "customers", customerId),
+      (snap) => {
+        setCustomer(snap.exists() ? ({ id: snap.id, ...snap.data() } as Customer) : null);
+      },
+      () => setLoadError("Failed to load this customer. Try refreshing the page.")
+    );
+  }, [customerId, user]);
 
   async function toggleActive() {
     if (!customer) return;
@@ -35,6 +47,10 @@ export default function CustomerDetailPage() {
       active: !customer.active,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  if (loadError) {
+    return <p className="text-destructive">{loadError}</p>;
   }
 
   if (customer === undefined) {

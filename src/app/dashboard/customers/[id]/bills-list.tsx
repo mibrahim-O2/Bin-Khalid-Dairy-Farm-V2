@@ -41,18 +41,27 @@ export function BillsList({ customerId }: { customerId: string }) {
   const { user } = useCurrentUser();
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Wait for the Firebase client SDK's own auth state — otherwise this can
+    // lose a race against auth rehydration on a fresh page load and fail
+    // with permission-denied.
+    if (!user) return;
     const db = getFirebaseDb();
     const q = query(
       collection(db, "bills"),
       where("customerId", "==", customerId),
       orderBy("createdAt", "desc")
     );
-    return onSnapshot(q, (snapshot) => {
-      setBills(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Bill));
-    });
-  }, [customerId]);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        setBills(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Bill));
+      },
+      () => setError("Failed to load bills. Try refreshing the page.")
+    );
+  }, [customerId, user]);
 
   async function handleNewBill() {
     if (!user) return;
@@ -98,6 +107,7 @@ export function BillsList({ customerId }: { customerId: string }) {
             New bill
           </Button>
         </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
