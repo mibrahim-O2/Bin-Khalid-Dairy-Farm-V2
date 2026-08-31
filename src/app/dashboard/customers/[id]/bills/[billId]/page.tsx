@@ -385,40 +385,52 @@ export default function BillDetailPage() {
                         {line.billingType === "milk" ? (
                           isDraft ? (
                             <div className="flex gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                aria-label="Daily quantity"
-                                placeholder="Daily"
-                                value={line.dailyQty ?? 0}
-                                className="w-20"
-                                onChange={(e) =>
-                                  updateLine(index, { dailyQty: Number(e.target.value) || 0 })
-                                }
-                              />
-                              <Input
-                                type="number"
-                                step="0.01"
-                                aria-label="Extra"
-                                placeholder="Extra"
-                                value={line.extra ?? 0}
-                                className="w-20"
-                                onChange={(e) =>
-                                  updateLine(index, { extra: Number(e.target.value) || 0 })
-                                }
-                              />
-                              <Input
-                                type="number"
-                                step="0.01"
-                                aria-label="Less"
-                                placeholder="Less"
-                                value={line.less ?? 0}
-                                className="w-20"
-                                onChange={(e) =>
-                                  updateLine(index, { less: Number(e.target.value) || 0 })
-                                }
-                              />
+                              <div className="flex flex-col gap-1">
+                                <Label className="text-[10px] font-normal text-muted-foreground">
+                                  Daily Qty
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  aria-label="Daily quantity"
+                                  value={line.dailyQty ?? 0}
+                                  className="w-20"
+                                  onChange={(e) =>
+                                    updateLine(index, { dailyQty: Number(e.target.value) || 0 })
+                                  }
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <Label className="text-[10px] font-normal text-muted-foreground">
+                                  Extra
+                                </Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  aria-label="Extra"
+                                  value={line.extra ?? 0}
+                                  className="w-20"
+                                  onChange={(e) =>
+                                    updateLine(index, { extra: Number(e.target.value) || 0 })
+                                  }
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <Label className="text-[10px] font-normal text-muted-foreground">
+                                  Less/Used
+                                </Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  aria-label="Less/used quantity"
+                                  value={line.less ?? 0}
+                                  className="w-20"
+                                  onChange={(e) =>
+                                    updateLine(index, { less: Number(e.target.value) || 0 })
+                                  }
+                                />
+                              </div>
                             </div>
                           ) : (
                             `Daily ${line.dailyQty}, +${line.extra ?? 0}, −${line.less ?? 0}`
