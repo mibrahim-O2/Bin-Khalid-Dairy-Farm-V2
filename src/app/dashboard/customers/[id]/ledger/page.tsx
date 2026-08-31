@@ -18,13 +18,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import type { Customer, CustomerLedgerTransaction } from "@/types/customer";
+import { VoidPaymentDialog } from "./void-payment-dialog";
 
 const typeLabels: Record<CustomerLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
   bill: "Bill",
   bill_void: "Bill Void",
   payment: "Payment",
+  payment_void: "Payment Void",
 };
 
 export default function CustomerLedgerPage() {
@@ -79,6 +82,15 @@ export default function CustomerLedgerPage() {
     });
   }, [transactions]);
 
+  // A payment already has a reversing "payment_void" entry — infer that from
+  // the ledger itself (already loaded) rather than fetching /payments too.
+  const voidedPaymentIds = useMemo(() => {
+    if (!transactions) return new Set<string>();
+    return new Set(
+      transactions.filter((t) => t.type === "payment_void" && t.paymentId).map((t) => t.paymentId!)
+    );
+  }, [transactions]);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -112,40 +124,59 @@ export default function CustomerLedgerPage() {
                   <TableHead>Debit</TableHead>
                   <TableHead>Credit</TableHead>
                   <TableHead>Balance</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows === null ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No transactions yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map(({ entry, runningBalance }) => (
-                    <TableRow key={entry.id}>
-                      <TableCell>{formatDate(entry.createdAt)}</TableCell>
-                      <TableCell className="font-medium text-foreground">
-                        {typeLabels[entry.type]}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{entry.note}</TableCell>
-                      <TableCell>
-                        {entry.direction === "debit" ? formatAmount(entry.amount) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {entry.direction === "credit" ? formatAmount(entry.amount) : "—"}
-                      </TableCell>
-                      <TableCell className="font-medium text-foreground">
-                        {formatAmount(runningBalance)}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  rows.map(({ entry, runningBalance }) => {
+                    const isVoidedPayment =
+                      entry.type === "payment" &&
+                      !!entry.paymentId &&
+                      voidedPaymentIds.has(entry.paymentId);
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell>{formatDate(entry.createdAt)}</TableCell>
+                        <TableCell className="font-medium text-foreground">
+                          {typeLabels[entry.type]}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {entry.note}
+                          {isVoidedPayment ? (
+                            <Badge variant="destructive" className="ml-2">
+                              Voided
+                            </Badge>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          {entry.direction === "debit" ? formatAmount(entry.amount) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {entry.direction === "credit" ? formatAmount(entry.amount) : "—"}
+                        </TableCell>
+                        <TableCell className="font-medium text-foreground">
+                          {formatAmount(runningBalance)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {entry.type === "payment" && entry.paymentId && !isVoidedPayment ? (
+                            <VoidPaymentDialog paymentId={entry.paymentId} />
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

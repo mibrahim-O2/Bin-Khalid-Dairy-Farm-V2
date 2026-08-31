@@ -1,3 +1,5 @@
+export type PaymentActor = { uid: string; email: string | null };
+
 export type CustomerPayment = {
   id: string;
   customerId: string;
@@ -5,7 +7,11 @@ export type CustomerPayment = {
   method: string | null;
   note: string | null;
   createdAt: string;
-  createdBy: { uid: string; email: string | null };
+  createdBy: PaymentActor;
+  /** Never deleted or edited — void is recorded alongside the original, same as a bill void. */
+  voidedAt: string | null;
+  voidedBy: PaymentActor | null;
+  voidReason: string | null;
 };
 
 /** One payment can settle parts of several bills — FIFO, oldest bill first. */

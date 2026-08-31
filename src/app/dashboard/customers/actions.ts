@@ -152,6 +152,9 @@ export async function recordCustomerPayment(input: {
         note: note ?? null,
         createdAt: now,
         createdBy: { uid: session.uid, email: session.email },
+        voidedAt: null,
+        voidedBy: null,
+        voidReason: null,
       });
 
       tx.set(db.collection("customerLedgerTransactions").doc(), {
@@ -202,6 +205,100 @@ export async function recordCustomerPayment(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to record payment.",
+    };
+  }
+}
+
+const voidPaymentSchema = z.object({
+  paymentId: z.string().min(1),
+  reason: z.string().min(1).max(500),
+});
+
+/**
+ * Voids a payment: never deletes or edits the original record (same
+ * principle as voidBill). Reverses exactly what this payment did — its
+ * FIFO allocations (each bill's amountPaid drops back by what this specific
+ * payment contributed, so getBillPaymentStatus() re-derives correctly even
+ * if other payments also touched the same bill) and the customer's cached
+ * balance — via a reversing debit ledger entry, all in one transaction.
+ */
+export async function voidCustomerPayment(input: {
+  paymentId: string;
+  reason: string;
+}): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+
+  const parsed = voidPaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "A reason is required to void a payment." };
+  }
+  const { paymentId, reason } = parsed.data;
+
+  const db = getAdminDb();
+  const paymentRef = db.collection("payments").doc(paymentId);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const paymentSnap = await tx.get(paymentRef);
+      if (!paymentSnap.exists) {
+        throw new Error("Payment not found.");
+      }
+      const payment = paymentSnap.data() as {
+        customerId: string;
+        amount: number;
+        voidedAt: string | null;
+      };
+      if (payment.voidedAt != null) {
+        throw new Error("This payment has already been voided.");
+      }
+
+      const allocationsSnap = await tx.get(
+        db.collection("paymentAllocations").where("paymentId", "==", paymentId)
+      );
+
+      const now = new Date().toISOString();
+      const customerRef = db.collection("customers").doc(payment.customerId);
+
+      tx.set(db.collection("customerLedgerTransactions").doc(), {
+        customerId: payment.customerId,
+        type: "payment_void",
+        direction: "debit",
+        amount: payment.amount,
+        note: `Void of payment: ${reason}`,
+        paymentId,
+        createdAt: now,
+        createdBy: { uid: session.uid, email: session.email },
+      });
+
+      tx.update(customerRef, {
+        balance: FieldValue.increment(payment.amount),
+        updatedAt: now,
+      });
+
+      // Reverse only this payment's own allocations — never touch what
+      // other payments contributed to the same bill.
+      for (const allocationDoc of allocationsSnap.docs) {
+        const allocation = allocationDoc.data() as { billId: string; amount: number };
+        tx.update(db.collection("bills").doc(allocation.billId), {
+          amountPaid: FieldValue.increment(-allocation.amount),
+          updatedAt: now,
+        });
+      }
+
+      tx.update(paymentRef, {
+        voidedAt: now,
+        voidedBy: { uid: session.uid, email: session.email },
+        voidReason: reason,
+      });
+    });
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to void payment.",
     };
   }
 }
