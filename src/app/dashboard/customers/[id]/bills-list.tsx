@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { addDoc, collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { getBillPaymentStatus, type Bill, type BillPaymentStatus, type BillStatus } from "@/types/bill";
+import { createDraftBill } from "./create-draft-bill";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -40,15 +41,6 @@ const paymentStatusLabel: Record<BillPaymentStatus, string> = {
   partial: "Partially Paid",
   paid: "Paid",
 };
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function firstOfMonthIso() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-}
 
 export function BillsList({ customerId }: { customerId: string }) {
   const router = useRouter();
@@ -81,33 +73,8 @@ export function BillsList({ customerId }: { customerId: string }) {
     if (!user) return;
     setCreating(true);
     try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      const ref = await addDoc(collection(db, "bills"), {
-        customerId,
-        billNumber: null,
-        status: "draft",
-        startDate: firstOfMonthIso(),
-        endDate: todayIso(),
-        days: 0,
-        lineItems: [],
-        subtotal: 0,
-        previousBalance: null,
-        totalPayable: null,
-        amountPaid: 0,
-        note: null,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: user.uid,
-        finalizedAt: null,
-        finalizedBy: null,
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-        replacesBillId: null,
-        replacedByBillId: null,
-      });
-      router.push(`/dashboard/customers/${customerId}/bills/${ref.id}`);
+      const billId = await createDraftBill(customerId, user.uid);
+      router.push(`/dashboard/customers/${customerId}/bills/${billId}`);
     } finally {
       setCreating(false);
     }

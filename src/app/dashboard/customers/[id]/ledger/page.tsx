@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
@@ -9,6 +9,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -21,6 +22,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { Customer, CustomerLedgerTransaction } from "@/types/customer";
 import { VoidPaymentDialog } from "./void-payment-dialog";
+import { RecordPaymentDialog } from "../record-payment-dialog";
+import { createDraftBill } from "../create-draft-bill";
 
 const typeLabels: Record<CustomerLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -32,12 +35,25 @@ const typeLabels: Record<CustomerLedgerTransaction["type"], string> = {
 
 export default function CustomerLedgerPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const customerId = params.id;
   const { user } = useCurrentUser();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [transactions, setTransactions] = useState<CustomerLedgerTransaction[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [creatingBill, setCreatingBill] = useState(false);
+
+  async function handleNewBill() {
+    if (!user) return;
+    setCreatingBill(true);
+    try {
+      const billId = await createDraftBill(customerId, user.uid);
+      router.push(`/dashboard/customers/${customerId}/bills/${billId}`);
+    } finally {
+      setCreatingBill(false);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -100,10 +116,22 @@ export default function CustomerLedgerPage() {
         >
           <ArrowLeft className="size-4" /> Back to {customer?.name ?? "customer"}
         </Link>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Customer Ledger</h1>
-        <p className="text-sm text-muted-foreground">
-          Every transaction, oldest first, with the running balance after each one.
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">Customer Ledger</h1>
+            <p className="text-sm text-muted-foreground">
+              Every transaction, oldest first, with the running balance after each one. This is
+              a read-only history — to record a new bill or payment, use the buttons here or on
+              the customer&apos;s page.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="outline" disabled={creatingBill || !user} onClick={handleNewBill}>
+              New bill
+            </Button>
+            <RecordPaymentDialog customerId={customerId} />
+          </div>
+        </div>
       </div>
 
       {error ? (

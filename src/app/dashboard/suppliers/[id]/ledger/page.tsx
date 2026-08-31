@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
@@ -9,6 +9,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -21,6 +22,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import { VoidPaymentDialog } from "./void-payment-dialog";
+import { RecordPaymentDialog } from "../record-payment-dialog";
+import { createDraftPurchase } from "../create-draft-purchase";
 
 const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -32,12 +35,25 @@ const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
 
 export default function SupplierLedgerPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const supplierId = params.id;
   const { user } = useCurrentUser();
 
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [transactions, setTransactions] = useState<SupplierLedgerTransaction[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [creatingPurchase, setCreatingPurchase] = useState(false);
+
+  async function handleNewPurchase() {
+    if (!user) return;
+    setCreatingPurchase(true);
+    try {
+      const purchaseId = await createDraftPurchase(supplierId, user.uid);
+      router.push(`/dashboard/suppliers/${supplierId}/purchases/${purchaseId}`);
+    } finally {
+      setCreatingPurchase(false);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -96,10 +112,22 @@ export default function SupplierLedgerPage() {
         >
           <ArrowLeft className="size-4" /> Back to {supplier?.name ?? "supplier"}
         </Link>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Supplier Ledger</h1>
-        <p className="text-sm text-muted-foreground">
-          Every transaction, oldest first, with the running balance after each one.
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">Supplier Ledger</h1>
+            <p className="text-sm text-muted-foreground">
+              Every transaction, oldest first, with the running balance after each one. This is
+              a read-only history — to record a new purchase or payment, use the buttons here or
+              on the supplier&apos;s page.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="outline" disabled={creatingPurchase || !user} onClick={handleNewPurchase}>
+              New purchase
+            </Button>
+            <RecordPaymentDialog supplierId={supplierId} />
+          </div>
+        </div>
       </div>
 
       {error ? (

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { addDoc, collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   type PurchasePaymentStatus,
   type PurchaseStatus,
 } from "@/types/purchase";
+import { createDraftPurchase } from "./create-draft-purchase";
 
 const statusVariant: Record<PurchaseStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -45,10 +46,6 @@ const paymentStatusLabel: Record<PurchasePaymentStatus, string> = {
   partial: "Partially Paid",
   paid: "Paid",
 };
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export function PurchasesList({ supplierId }: { supplierId: string }) {
   const router = useRouter();
@@ -78,30 +75,8 @@ export function PurchasesList({ supplierId }: { supplierId: string }) {
     if (!user) return;
     setCreating(true);
     try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      const ref = await addDoc(collection(db, "purchases"), {
-        supplierId,
-        status: "draft",
-        purchaseDate: todayIso(),
-        lineItems: [],
-        subtotal: 0,
-        previousBalance: null,
-        totalPayable: null,
-        amountPaid: 0,
-        note: null,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: user.uid,
-        finalizedAt: null,
-        finalizedBy: null,
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-        replacesPurchaseId: null,
-        replacedByPurchaseId: null,
-      });
-      router.push(`/dashboard/suppliers/${supplierId}/purchases/${ref.id}`);
+      const purchaseId = await createDraftPurchase(supplierId, user.uid);
+      router.push(`/dashboard/suppliers/${supplierId}/purchases/${purchaseId}`);
     } finally {
       setCreating(false);
     }
