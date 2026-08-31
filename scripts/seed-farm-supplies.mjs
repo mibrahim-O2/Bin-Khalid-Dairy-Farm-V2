@@ -1,9 +1,9 @@
-// One-off admin tool: pre-seeds the standard product list (Milk, Ghee, Dahi,
-// Makhan) if they don't already exist. Safe to re-run — it skips any product
-// whose name already exists.
+// One-off admin tool: pre-seeds a standard list of farm supply items if they
+// don't already exist. Safe to re-run — it skips any item whose name
+// already exists.
 //
 // Usage:
-//   node scripts/seed-products.mjs
+//   node scripts/seed-farm-supplies.mjs
 //
 // Requires FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and
 // FIREBASE_ADMIN_PRIVATE_KEY to be set (loaded from .env.local).
@@ -52,30 +52,30 @@ if (!projectId || !clientEmail || !privateKey) {
 const app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
 const db = getFirestore(app);
 
-const defaultProducts = [
-  { name: "Milk", unit: "Litre", billingType: "milk", defaultRate: 0 },
-  { name: "Ghee", unit: "Kg", billingType: "simple", defaultRate: 0 },
-  { name: "Dahi", unit: "Kg", billingType: "simple", defaultRate: 0 },
-  { name: "Makhan", unit: "Kg", billingType: "simple", defaultRate: 0 },
+const defaultItems = [
+  { name: "Wheat Bran (Chokar)", unit: "Kg", defaultRate: 0 },
+  { name: "Cottonseed Cake (Khal)", unit: "Kg", defaultRate: 0 },
+  { name: "Mineral Mixture", unit: "Kg", defaultRate: 0 },
+  { name: "Green Fodder", unit: "Kg", defaultRate: 0 },
+  { name: "Dry Fodder (Bhoosa)", unit: "Kg", defaultRate: 0 },
 ];
 
-const existingSnapshot = await db.collection("products").get();
+const existingSnapshot = await db.collection("farmSupplyItems").get();
 const existingNames = new Set(existingSnapshot.docs.map((d) => d.data().name));
-
 const now = new Date().toISOString();
 
-for (const product of defaultProducts) {
-  if (existingNames.has(product.name)) {
-    console.log(`Skipping "${product.name}" — already exists.`);
+for (const item of defaultItems) {
+  if (existingNames.has(item.name)) {
+    console.log(`Skipping "${item.name}" — already exists.`);
     continue;
   }
-  await db.collection("products").add({
-    ...product,
+  await db.collection("farmSupplyItems").add({
+    ...item,
     active: true,
     createdAt: now,
     updatedAt: now,
   });
-  console.log(`Created "${product.name}".`);
+  console.log(`Created "${item.name}".`);
 }
 
-console.log("Done. Set real default rates from the Products page in the dashboard.");
+console.log("Done. Set real default rates from the Farm Supplies page in the dashboard.");
