@@ -16,6 +16,7 @@ import { CustomerFormDialog } from "../customer-form-dialog";
 import { RateManager } from "./rate-manager";
 import { OpeningBalanceCard } from "./opening-balance-card";
 import { BillsList } from "./bills-list";
+import { RecordPaymentDialog } from "./record-payment-dialog";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -118,8 +119,9 @@ export default function CustomerDetailPage() {
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-start justify-between gap-2">
             <CardTitle>Balance</CardTitle>
+            <RecordPaymentDialog customerId={customer.id} />
           </CardHeader>
           <CardContent>
             <p className="font-heading text-3xl font-bold text-foreground">
@@ -132,6 +134,12 @@ export default function CustomerDetailPage() {
                   ? "Customer has credit"
                   : "Settled"}
             </p>
+            <Link
+              href={`/dashboard/customers/${customer.id}/ledger`}
+              className="mt-2 inline-block text-sm text-primary hover:underline"
+            >
+              View full ledger
+            </Link>
           </CardContent>
         </Card>
       </div>
