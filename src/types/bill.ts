@@ -35,6 +35,14 @@ export type Bill = {
   previousBalance: number | null;
   /** Snapshot of subtotal + previousBalance at finalize time — display only. */
   totalPayable: number | null;
+  /**
+   * Cumulative amount allocated to this bill from payments (FIFO across a
+   * customer's outstanding finalized bills, oldest first) — written only
+   * inside the same Server Action transaction as the payment's ledger
+   * entry. Payment status is always derived from this, never stored
+   * separately — see getBillPaymentStatus().
+   */
+  amountPaid: number;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -47,3 +55,12 @@ export type Bill = {
   replacesBillId: string | null;
   replacedByBillId: string | null;
 };
+
+export type BillPaymentStatus = "unpaid" | "partial" | "paid";
+
+/** Only meaningful for a finalized bill — always derived, never stored. */
+export function getBillPaymentStatus(bill: Pick<Bill, "subtotal" | "amountPaid">): BillPaymentStatus {
+  if (bill.amountPaid <= 0) return "unpaid";
+  if (bill.amountPaid >= bill.subtotal) return "paid";
+  return "partial";
+}
