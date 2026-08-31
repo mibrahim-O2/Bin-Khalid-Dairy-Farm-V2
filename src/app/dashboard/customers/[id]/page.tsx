@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Customer } from "@/types/customer";
+import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "../customer-form-dialog";
 import { RateManager } from "./rate-manager";
 import { OpeningBalanceCard } from "./opening-balance-card";
@@ -105,7 +106,7 @@ export default function CustomerDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="font-heading text-3xl font-bold text-foreground">
-              {customer.balance.toLocaleString()}
+              {formatAmount(customer.balance)}
             </p>
             <p className="text-sm text-muted-foreground">
               {customer.balance > 0

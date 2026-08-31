@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CustomerLedgerDirection, CustomerLedgerTransaction } from "@/types/customer";
+import { formatAmount } from "@/lib/format-number";
 import { setCustomerOpeningBalance } from "../actions";
 
 export function OpeningBalanceCard({
@@ -84,7 +85,7 @@ export function OpeningBalanceCard({
             <>
               <p className="text-foreground">
                 {entry.direction === "debit" ? "Customer owed" : "Customer had credit of"}{" "}
-                <span className="font-medium">{entry.amount.toLocaleString()}</span> when added to
+                <span className="font-medium">{formatAmount(entry.amount)}</span> when added to
                 this system.
               </p>
               <p className="mt-1">{entry.note}</p>

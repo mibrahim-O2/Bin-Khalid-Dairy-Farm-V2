@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Customer } from "@/types/customer";
+import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "./customer-form-dialog";
 
 export default function CustomersPage() {
@@ -130,7 +131,7 @@ export default function CustomersPage() {
                               : "text-muted-foreground"
                         }
                       >
-                        {customer.balance.toLocaleString()}
+                        {formatAmount(customer.balance)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={customer.active ? "default" : "secondary"}>
