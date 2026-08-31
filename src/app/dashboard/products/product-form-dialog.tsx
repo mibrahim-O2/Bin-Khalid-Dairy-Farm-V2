@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  serverTimestamp,
-  updateDoc,
-} from "firebase/firestore";
+import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,13 +66,14 @@ export function ProductFormDialog({ product, trigger }: ProductFormDialogProps) 
     setError(null);
     try {
       const db = getFirebaseDb();
+      const now = new Date().toISOString();
       if (product) {
         await updateDoc(doc(db, "products", product.id), {
           name: name.trim(),
           unit: unit.trim(),
           billingType,
           defaultRate: rate,
-          updatedAt: serverTimestamp(),
+          updatedAt: now,
         });
       } else {
         await addDoc(collection(db, "products"), {
@@ -87,8 +82,8 @@ export function ProductFormDialog({ product, trigger }: ProductFormDialogProps) 
           billingType,
           defaultRate: rate,
           active: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          createdAt: now,
+          updatedAt: now,
         });
       }
       setOpen(false);

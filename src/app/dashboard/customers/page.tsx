@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ export default function CustomersPage() {
     const db = getFirebaseDb();
     await updateDoc(doc(db, "customers", customer.id), {
       active: !customer.active,
-      updatedAt: serverTimestamp(),
+      updatedAt: new Date().toISOString(),
     });
   }
 

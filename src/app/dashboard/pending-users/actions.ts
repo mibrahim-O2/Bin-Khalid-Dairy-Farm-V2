@@ -1,7 +1,6 @@
 "use server";
 
 import { z } from "zod";
-import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
@@ -57,7 +56,7 @@ export async function approvePendingUser(input: { uid: string }): Promise<Action
           displayName: userRecord.displayName ?? null,
           active: true,
           role: "admin",
-          approvedAt: FieldValue.serverTimestamp(),
+          approvedAt: new Date().toISOString(),
           approvedBy: { uid: session.uid, email: session.email },
         },
         { merge: true }

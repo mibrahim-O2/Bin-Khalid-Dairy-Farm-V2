@@ -56,6 +56,7 @@ export async function setCustomerOpeningBalance(input: {
       }
 
       const delta = direction === "debit" ? amount : -amount;
+      const now = new Date().toISOString();
 
       tx.set(ledgerRef, {
         customerId,
@@ -63,7 +64,7 @@ export async function setCustomerOpeningBalance(input: {
         direction,
         amount,
         note,
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: now,
         createdBy: { uid: session.uid, email: session.email },
       });
 
@@ -72,7 +73,7 @@ export async function setCustomerOpeningBalance(input: {
       tx.update(customerRef, {
         balance: FieldValue.increment(delta),
         hasOpeningBalance: true,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: now,
       });
     });
     return { ok: true };

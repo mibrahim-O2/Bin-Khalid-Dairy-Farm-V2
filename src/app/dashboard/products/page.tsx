@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +40,7 @@ export default function ProductsPage() {
     const db = getFirebaseDb();
     await updateDoc(doc(db, "products", product.id), {
       active: !product.active,
-      updatedAt: serverTimestamp(),
+      updatedAt: new Date().toISOString(),
     });
   }
 

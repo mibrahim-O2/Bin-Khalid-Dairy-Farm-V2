@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
@@ -58,12 +58,13 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
     setError(null);
     try {
       const db = getFirebaseDb();
+      const now = new Date().toISOString();
       if (customer) {
         await updateDoc(doc(db, "customers", customer.id), {
           name: name.trim(),
           phone: phone.trim() || null,
           address: address.trim() || null,
-          updatedAt: serverTimestamp(),
+          updatedAt: now,
         });
       } else {
         const ref = await addDoc(collection(db, "customers"), {
@@ -73,8 +74,8 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
           active: true,
           balance: 0,
           hasOpeningBalance: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          createdAt: now,
+          updatedAt: now,
           createdBy: user.uid,
         });
         onCreated?.(ref.id);

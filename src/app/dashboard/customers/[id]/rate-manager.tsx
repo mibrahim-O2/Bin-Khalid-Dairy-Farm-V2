@@ -8,7 +8,6 @@ import {
   orderBy,
   query,
   runTransaction,
-  serverTimestamp,
   where,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/client";
@@ -74,6 +73,7 @@ function RateEditDialog({
     try {
       const db = getFirebaseDb();
       const rateRef = doc(db, "customerRates", `${customerId}_${product.id}`);
+      const now = new Date().toISOString();
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(rateRef);
         if (snap.exists()) {
@@ -83,7 +83,7 @@ function RateEditDialog({
           const historyRef = doc(collection(rateRef, "history"));
           tx.set(historyRef, {
             rate: previous.rate,
-            supersededAt: serverTimestamp(),
+            supersededAt: now,
             updatedBy: previous.updatedBy ?? null,
           });
         }
@@ -91,7 +91,7 @@ function RateEditDialog({
           customerId,
           productId: product.id,
           rate: newRate,
-          updatedAt: serverTimestamp(),
+          updatedAt: now,
           updatedBy: user.uid,
         });
       });
