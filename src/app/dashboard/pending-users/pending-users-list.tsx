@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDate } from "@/lib/format-date";
 import { approvePendingUser } from "./actions";
 
 export type PendingUser = {
@@ -70,7 +71,7 @@ export function PendingUsersList({ initialUsers }: { initialUsers: PendingUser[]
                       {user.displayName ?? "—"}
                     </TableCell>
                     <TableCell>{user.email ?? "—"}</TableCell>
-                    <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(user.createdAt)}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         size="sm"
