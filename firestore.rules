@@ -48,6 +48,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // --- Bills (Phase 4) ---
+    // A draft bill isn't a posted financial record yet — no ledger entry
+    // exists for it — so it's fine for an admin to create/edit/delete it
+    // directly, same trust level as other master data. The moment a bill
+    // stops being a draft (finalized or void), it becomes a financial
+    // record and must never be touched by a direct client write again —
+    // enforced here too (defense in depth), not just in application code.
+    match /bills/{billId} {
+      allow read: if isActiveAdmin();
+      allow create: if isActiveAdmin() && request.resource.data.status == 'draft';
+      allow update: if isActiveAdmin()
+        && resource.data.status == 'draft'
+        && request.resource.data.status == 'draft';
+      allow delete: if isActiveAdmin() && resource.data.status == 'draft';
+    }
+
+    // Sequential bill-number counters — never client-writable, to avoid
+    // duplicate numbers under concurrent use. Only the finalize Server
+    // Action (Admin SDK) increments these, inside a transaction.
+    match /counters/{counterId} {
+      allow read, write: if false;
+    }
+
     // Deny everything else by default until a phase explicitly opens it up.
     match /{document=**} {
       allow read, write: if false;
