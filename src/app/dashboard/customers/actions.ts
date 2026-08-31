@@ -4,6 +4,7 @@ import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 
 const openingBalanceSchema = z.object({
   customerId: z.string().min(1),
@@ -299,6 +300,87 @@ export async function voidCustomerPayment(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to void payment.",
+    };
+  }
+}
+
+const deleteCustomerSchema = z.object({
+  customerId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * Permanently deletes a customer's master-data record and rate schedule —
+ * Owner-only, and re-verified here regardless of what the UI hides. This is
+ * a deliberate exception to the project's usual "archive, never delete"
+ * rule for customers, requested explicitly by the Owner.
+ *
+ * It does NOT touch that customer's bills, payments, or
+ * customerLedgerTransactions — those are financial records and
+ * SYSTEM_ARCHITECTURE.md's rule 1 ("never hard-delete a finalized
+ * financial record") is non-negotiable regardless of who's asking. They
+ * remain in Firestore, permanently, just no longer joined to a live
+ * customer document. The deletion itself is recorded in activityLogs so
+ * there's still an audit trail after the customer record is gone.
+ */
+export async function deleteCustomer(input: {
+  customerId: string;
+  reason?: string;
+}): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a customer." };
+  }
+
+  const parsed = deleteCustomerSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { customerId, reason } = parsed.data;
+
+  const db = getAdminDb();
+  const customerRef = db.collection("customers").doc(customerId);
+
+  try {
+    const customerSnap = await customerRef.get();
+    if (!customerSnap.exists) {
+      return { ok: false, error: "Customer not found." };
+    }
+    const customer = customerSnap.data() as { name: string };
+
+    const batch = db.batch();
+
+    const ratesSnap = await db
+      .collection("customerRates")
+      .where("customerId", "==", customerId)
+      .get();
+    for (const rateDoc of ratesSnap.docs) {
+      const historySnap = await rateDoc.ref.collection("history").get();
+      for (const historyDoc of historySnap.docs) batch.delete(historyDoc.ref);
+      batch.delete(rateDoc.ref);
+    }
+
+    batch.delete(customerRef);
+
+    const now = new Date().toISOString();
+    batch.set(db.collection("activityLogs").doc(), {
+      action: "customer_deleted",
+      customerId,
+      customerName: customer.name,
+      reason: reason ?? null,
+      performedBy: { uid: session.uid, email: session.email },
+      createdAt: now,
+    });
+
+    await batch.commit();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to delete customer.",
     };
   }
 }

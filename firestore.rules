@@ -24,8 +24,15 @@ service cloud.firestore {
     }
 
     // --- Non-financial master data (Phase 3) ---
+    // Customers are archived (active: false), never deleted, by any regular
+    // admin. Hard-deleting one is an Owner-only exception (deleteCustomer
+    // Server Action) — denied here at the rules level too so a non-owner
+    // admin can never delete one via a direct client call, regardless of
+    // what the UI shows them.
     match /customers/{customerId} {
-      allow read, write: if isActiveAdmin();
+      allow read: if isActiveAdmin();
+      allow create, update: if isActiveAdmin();
+      allow delete: if false;
     }
 
     match /products/{productId} {
@@ -80,6 +87,14 @@ service cloud.firestore {
     }
 
     match /paymentAllocations/{allocationId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
+    // Audit trail for owner-only destructive actions (e.g. customer
+    // deletion) — admin-readable, but only a Server Action (Admin SDK) ever
+    // writes to it.
+    match /activityLogs/{logId} {
       allow read: if isActiveAdmin();
       allow write: if false;
     }
