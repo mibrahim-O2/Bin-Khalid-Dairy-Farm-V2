@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Customer } from "@/types/customer";
+import { createCustomer, updateCustomer } from "./crud-actions";
 
 type CustomerFormDialogProps = {
   customer?: Customer;
@@ -26,7 +25,7 @@ type CustomerFormDialogProps = {
 };
 
 export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFormDialogProps) {
-  const { user } = useCurrentUser();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(customer?.name ?? "");
   const [phone, setPhone] = useState(customer?.phone ?? "");
@@ -49,43 +48,27 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
       setError("Name is required.");
       return;
     }
-    if (!user) {
-      setError("Still loading your session — try again in a moment.");
-      return;
-    }
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      if (customer) {
-        await updateDoc(doc(db, "customers", customer.id), {
-          name: name.trim(),
-          phone: phone.trim() || null,
-          address: address.trim() || null,
-          updatedAt: now,
-        });
-      } else {
-        const ref = await addDoc(collection(db, "customers"), {
-          name: name.trim(),
-          phone: phone.trim() || null,
-          address: address.trim() || null,
-          active: true,
-          balance: 0,
-          hasOpeningBalance: false,
-          createdAt: now,
-          updatedAt: now,
-          createdBy: user.uid,
-        });
-        onCreated?.(ref.id);
-      }
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
+    if (customer) {
+      const result = await updateCustomer({ customerId: customer.id, name, phone, address });
       setSaving(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+    } else {
+      const result = await createCustomer({ name, phone, address });
+      setSaving(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (result.customerId) onCreated?.(result.customerId);
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
