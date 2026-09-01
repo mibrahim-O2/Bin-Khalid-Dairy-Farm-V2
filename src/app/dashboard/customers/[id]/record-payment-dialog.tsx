@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import {
 import { recordCustomerPayment } from "../actions";
 
 export function RecordPaymentDialog({ customerId }: { customerId: string }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("");
@@ -49,6 +51,7 @@ export function RecordPaymentDialog({ customerId }: { customerId: string }) {
     setMethod("");
     setNote("");
     setOpen(false);
+    router.refresh();
   }
 
   return (

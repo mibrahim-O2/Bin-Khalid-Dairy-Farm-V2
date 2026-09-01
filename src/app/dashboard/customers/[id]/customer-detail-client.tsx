@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Customer, CustomerRate, Product } from "@/types/customer";
+import type { Customer, CustomerLedgerTransaction, CustomerRate, Product } from "@/types/customer";
 import type { Bill } from "@/types/bill";
 import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "../customer-form-dialog";
@@ -24,12 +24,14 @@ export function CustomerDetailClient({
   products,
   rates,
   bills,
+  openingBalanceEntry,
 }: {
   isOwner: boolean;
   customer: Customer | null;
   products: Product[];
   rates: CustomerRate[];
   bills: Bill[];
+  openingBalanceEntry: CustomerLedgerTransaction | null;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -131,7 +133,11 @@ export function CustomerDetailClient({
         </Card>
       </div>
 
-      <OpeningBalanceCard customerId={customer.id} hasOpeningBalance={customer.hasOpeningBalance} />
+      <OpeningBalanceCard
+        customerId={customer.id}
+        hasOpeningBalance={customer.hasOpeningBalance}
+        entry={openingBalanceEntry}
+      />
 
       <BillsList customerId={customer.id} bills={bills} />
 
