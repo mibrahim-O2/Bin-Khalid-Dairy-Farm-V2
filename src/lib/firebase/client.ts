@@ -1,6 +1,5 @@
 import { getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,7 +12,6 @@ const firebaseConfig: FirebaseOptions = {
 
 let cachedApp: FirebaseApp | null = null;
 let cachedAuth: Auth | null = null;
-let cachedDb: Firestore | null = null;
 
 // Lazy so importing this module during server-side prerendering (where
 // NEXT_PUBLIC_* env vars may not be set yet) never throws — Firebase client
@@ -24,12 +22,10 @@ function getFirebaseApp(): FirebaseApp {
   return cachedApp;
 }
 
+// Firestore is no longer used anywhere in the app — every domain migrated
+// to Postgres (see src/lib/db/README.md). This module keeps only what
+// Firebase Authentication itself still needs.
 export function getFirebaseAuth(): Auth {
   if (!cachedAuth) cachedAuth = getAuth(getFirebaseApp());
   return cachedAuth;
-}
-
-export function getFirebaseDb(): Firestore {
-  if (!cachedDb) cachedDb = getFirestore(getFirebaseApp());
-  return cachedDb;
 }

@@ -1,7 +1,6 @@
 import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 let cachedApp: App | null = null;
 
@@ -33,14 +32,11 @@ function getAdminApp(): App {
 // real credentials) never throws — the error only surfaces when a request
 // actually needs the Admin SDK.
 let cachedAuth: Auth | null = null;
-let cachedDb: Firestore | null = null;
 
+// Firestore is no longer used anywhere in the app — every domain migrated
+// to Postgres (see src/lib/db/README.md). This module keeps only what
+// Firebase Authentication itself still needs.
 export function getAdminAuth(): Auth {
   if (!cachedAuth) cachedAuth = getAuth(getAdminApp());
   return cachedAuth;
-}
-
-export function getAdminDb(): Firestore {
-  if (!cachedDb) cachedDb = getFirestore(getAdminApp());
-  return cachedDb;
 }
