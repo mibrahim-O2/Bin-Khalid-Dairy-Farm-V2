@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Customer, CustomerRate, Product } from "@/types/customer";
+import type { Bill } from "@/types/bill";
 import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "../customer-form-dialog";
 import { setCustomerActive } from "../crud-actions";
@@ -22,11 +23,13 @@ export function CustomerDetailClient({
   customer,
   products,
   rates,
+  bills,
 }: {
   isOwner: boolean;
   customer: Customer | null;
   products: Product[];
   rates: CustomerRate[];
+  bills: Bill[];
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -130,7 +133,7 @@ export function CustomerDetailClient({
 
       <OpeningBalanceCard customerId={customer.id} hasOpeningBalance={customer.hasOpeningBalance} />
 
-      <BillsList customerId={customer.id} />
+      <BillsList customerId={customer.id} bills={bills} />
 
       <Card>
         <CardHeader>

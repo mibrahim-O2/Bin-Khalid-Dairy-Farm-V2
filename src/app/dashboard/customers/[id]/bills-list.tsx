@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +17,7 @@ import {
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { getBillPaymentStatus, type Bill, type BillPaymentStatus, type BillStatus } from "@/types/bill";
-import { createDraftBill } from "./create-draft-bill";
+import { createDraftBill } from "./bills/actions";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -42,42 +39,21 @@ const paymentStatusLabel: Record<BillPaymentStatus, string> = {
   paid: "Paid",
 };
 
-export function BillsList({ customerId }: { customerId: string }) {
+export function BillsList({ customerId, bills }: { customerId: string; bills: Bill[] }) {
   const router = useRouter();
-  const { user } = useCurrentUser();
-  const [bills, setBills] = useState<Bill[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Wait for the Firebase client SDK's own auth state — otherwise this can
-    // lose a race against auth rehydration on a fresh page load and fail
-    // with permission-denied.
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "bills"),
-      where("customerId", "==", customerId),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        setBills(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Bill));
-      },
-      () => setError("Failed to load bills. Try refreshing the page.")
-    );
-  }, [customerId, user]);
-
   async function handleNewBill() {
-    if (!user) return;
     setCreating(true);
-    try {
-      const billId = await createDraftBill(customerId, user.uid);
-      router.push(`/dashboard/customers/${customerId}/bills/${billId}`);
-    } finally {
-      setCreating(false);
+    setError(null);
+    const result = await createDraftBill(customerId);
+    setCreating(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    router.push(`/dashboard/customers/${customerId}/bills/${result.billId}`);
   }
 
   return (
@@ -85,7 +61,7 @@ export function BillsList({ customerId }: { customerId: string }) {
       <CardContent className="flex flex-col gap-4 pt-6">
         <div className="flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold text-foreground">Bills</h2>
-          <Button size="sm" disabled={creating || !user} onClick={handleNewBill}>
+          <Button size="sm" disabled={creating} onClick={handleNewBill}>
             New bill
           </Button>
         </div>
@@ -102,13 +78,7 @@ export function BillsList({ customerId }: { customerId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bills === null ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    Loading…
-                  </TableCell>
-                </TableRow>
-              ) : bills.length === 0 ? (
+              {bills.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">
                     No bills yet.

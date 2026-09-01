@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Customer, CustomerLedgerTransaction } from "@/types/customer";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { RecordPaymentDialog } from "../record-payment-dialog";
-import { createDraftBill } from "../create-draft-bill";
+import { createDraftBill } from "../bills/actions";
 
 const typeLabels: Record<CustomerLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -45,11 +45,14 @@ export default function CustomerLedgerPage() {
   const [creatingBill, setCreatingBill] = useState(false);
 
   async function handleNewBill() {
-    if (!user) return;
     setCreatingBill(true);
     try {
-      const billId = await createDraftBill(customerId, user.uid);
-      router.push(`/dashboard/customers/${customerId}/bills/${billId}`);
+      const result = await createDraftBill(customerId);
+      if (result.ok) {
+        router.push(`/dashboard/customers/${customerId}/bills/${result.billId}`);
+      } else {
+        setError(result.error);
+      }
     } finally {
       setCreatingBill(false);
     }

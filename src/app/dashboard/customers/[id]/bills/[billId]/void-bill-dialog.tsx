@@ -42,6 +42,8 @@ export function VoidBillDialog({ billId, customerId }: { billId: string; custome
     setOpen(false);
     if (result.replacementBillId) {
       router.push(`/dashboard/customers/${customerId}/bills/${result.replacementBillId}`);
+    } else {
+      router.refresh();
     }
   }
 
