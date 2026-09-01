@@ -1,11 +1,17 @@
 import "server-only";
 import { toNumber } from "@/lib/money";
 import type {
+  authorizedPeople,
   billLineItems,
   bills,
   customerLedgerTransactions,
   customerRates,
   customers,
+  employeeLedgerTransactions,
+  employees,
+  employeeSalaryAccruals,
+  employeeSalaryHistory,
+  employeeStatements,
   farmSupplyItems,
   products,
   purchaseLineItems,
@@ -19,6 +25,10 @@ import type { Bill, BillLineItem } from "@/types/bill";
 import type { FarmSupplyItem, Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase, PurchaseLineItem } from "@/types/purchase";
 import type { SupplierStatement } from "@/types/supplier-statement";
+import type { AuthorizedPerson, Employee, EmployeeLedgerTransaction } from "@/types/employee";
+import type { EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
+import type { EmployeeSalaryAccrual } from "@/types/salary-accrual";
+import type { EmployeeStatement } from "@/types/employee-statement";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
 // objects) into the exact TS shape every existing component already
@@ -160,6 +170,96 @@ export function toSupplierStatement(row: typeof supplierStatements.$inferSelect)
     // Stored as jsonb — already the exact SupplierLedgerTransaction[] shape
     // at write time (see generateSupplierStatement), just numbers already.
     transactions: row.transactions as SupplierLedgerTransaction[],
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+  };
+}
+
+export function toEmployee(row: typeof employees.$inferSelect): Employee {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    address: row.address,
+    active: row.active,
+    balance: toNumber(row.balance),
+    hasOpeningBalance: row.hasOpeningBalance,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+  };
+}
+
+export function toAuthorizedPerson(row: typeof authorizedPeople.$inferSelect): AuthorizedPerson {
+  return {
+    id: row.id,
+    name: row.name,
+    active: row.active,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toEmployeeSalaryHistoryEntry(
+  row: typeof employeeSalaryHistory.$inferSelect
+): EmployeeSalaryHistoryEntry {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    monthlySalary: toNumber(row.monthlySalary),
+    effectiveFrom: row.effectiveFrom,
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+  };
+}
+
+export function toEmployeeSalaryAccrual(
+  row: typeof employeeSalaryAccruals.$inferSelect
+): EmployeeSalaryAccrual {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    amount: toNumber(row.amount),
+    note: row.note,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+    voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
+    voidedBy: row.voidedByUid ? { uid: row.voidedByUid, email: row.voidedByEmail } : null,
+    voidReason: row.voidReason,
+  };
+}
+
+export function toEmployeeLedgerTransaction(
+  row: typeof employeeLedgerTransactions.$inferSelect
+): EmployeeLedgerTransaction {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    type: row.type,
+    direction: row.direction,
+    amount: toNumber(row.amount),
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+    accrualId: row.accrualId ?? undefined,
+    paymentId: row.paymentId ?? undefined,
+  };
+}
+
+export function toEmployeeStatement(row: typeof employeeStatements.$inferSelect): EmployeeStatement {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    employeeName: row.employeeName,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    openingBalance: toNumber(row.openingBalance),
+    closingBalance: toNumber(row.closingBalance),
+    transactions: row.transactions as EmployeeLedgerTransaction[],
     createdAt: row.createdAt.toISOString(),
     createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
   };
