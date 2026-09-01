@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { EmployeeLedgerTransaction } from "@/types/employee";
+import { ShareImageButton } from "@/components/invoice/share-image-button";
+import { EmployeeStatementTemplate } from "@/components/invoice/employee-statement-template";
 
 const typeLabels: Record<EmployeeLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -47,19 +49,28 @@ export default async function EmployeeStatementPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link
-          href={`/dashboard/employees/${employeeId}`}
-          className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <Link
+            href={`/dashboard/employees/${employeeId}`}
+            className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" /> Back to {statement.employeeName}
+          </Link>
+          <h1 className="font-heading text-2xl font-bold text-foreground">
+            Statement — {formatDate(statement.startDate)} to {formatDate(statement.endDate)}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Generated {formatDate(statement.createdAt)} for {statement.employeeName}
+          </p>
+        </div>
+        <ShareImageButton
+          fileName={`${statement.employeeName}-statement.png`}
+          shareTitle={`Statement — ${statement.employeeName}`}
+          shareText={`${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}`}
         >
-          <ArrowLeft className="size-4" /> Back to {statement.employeeName}
-        </Link>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Statement — {formatDate(statement.startDate)} to {formatDate(statement.endDate)}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Generated {formatDate(statement.createdAt)} for {statement.employeeName}
-        </p>
+          <EmployeeStatementTemplate statement={statement} />
+        </ShareImageButton>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
