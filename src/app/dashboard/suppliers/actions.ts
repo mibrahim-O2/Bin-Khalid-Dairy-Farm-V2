@@ -1,12 +1,22 @@
 "use server";
 
+// Supplier opening balance / Jama payments / ledger, fully on Postgres
+// (M8) — no Firestore involvement anywhere in this file. Mirrors
+// customers/actions.ts exactly, with Domain B's naming (Jama = payment to
+// a supplier) and purchases in place of bills.
+
 import { z } from "zod";
-import { FieldValue } from "firebase-admin/firestore";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
-import { purchases, suppliers as suppliersTable } from "@/lib/db/schema";
+import {
+  purchases,
+  supplierLedgerTransactions,
+  supplierPaymentAllocations,
+  supplierPayments,
+  suppliers,
+} from "@/lib/db/schema";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -22,14 +32,6 @@ const openingBalanceSchema = z.object({
  * setCustomerOpeningBalance in customers/actions.ts, this is the same
  * pattern for Domain B (Suppliers: debit = purchase/farm owes more,
  * credit = payment/farm owes less).
- *
- * Suppliers moved to Postgres in M6, so a supplier created since then has
- * no Firestore `suppliers` doc at all — existence is checked there
- * instead, and the Firestore-side write uses `set(..., {merge: true})`
- * rather than `update()` so it can create that doc on first use instead of
- * throwing. This is a necessary fix, not a bridge: without it, opening
- * balance/payments would be completely broken (not just stale) for every
- * supplier created after M6, until this file migrates fully in M8.
  */
 export async function setSupplierOpeningBalance(input: {
   supplierId: string;
@@ -48,45 +50,39 @@ export async function setSupplierOpeningBalance(input: {
   }
   const { supplierId, direction, amount, note } = parsed.data;
 
-  const [supplierRow] = await getDb().select().from(suppliersTable).where(eq(suppliersTable.id, supplierId));
-  if (!supplierRow) {
-    return { ok: false, error: "Supplier not found." };
-  }
-
-  const db = getAdminDb();
-  const supplierRef = db.collection("suppliers").doc(supplierId);
-  const ledgerRef = db.collection("supplierLedgerTransactions").doc();
+  const db = getDb();
+  const delta = direction === "debit" ? amount : -amount;
 
   try {
-    await db.runTransaction(async (tx) => {
-      const supplierSnap = await tx.get(supplierRef);
-      if (supplierSnap.exists && supplierSnap.data()?.hasOpeningBalance) {
+    await db.transaction(async (tx) => {
+      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, supplierId));
+      if (!supplier) {
+        throw new Error("Supplier not found.");
+      }
+      if (supplier.hasOpeningBalance) {
         throw new Error("Opening balance already recorded for this supplier.");
       }
 
-      const delta = direction === "debit" ? amount : -amount;
-      const now = new Date().toISOString();
-
-      tx.set(ledgerRef, {
+      await tx.insert(supplierLedgerTransactions).values({
         supplierId,
         type: "opening_balance",
         direction,
-        amount,
+        amount: String(amount),
         note,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.set(
-        supplierRef,
-        {
-          balance: FieldValue.increment(delta),
+      await tx
+        .update(suppliers)
+        .set({
+          balance: sql`${suppliers.balance} + ${delta}`,
           hasOpeningBalance: true,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
+          updatedAt: new Date(),
+        })
+        .where(eq(suppliers.id, supplierId));
     });
+    revalidatePath(`/dashboard/suppliers/${supplierId}`);
     return { ok: true };
   } catch (err) {
     return {
@@ -106,14 +102,10 @@ const recordPaymentSchema = z.object({
 /**
  * Records a Jama (payment to a supplier): a real ledger credit,
  * FIFO-allocated across the supplier's outstanding finalized purchases
- * (oldest first). Mirrors recordCustomerPayment's shape from before M4 —
- * payment/ledger/balance are still Firestore (this file migrates fully in
- * M8) — but purchases themselves moved to Postgres in M7, so the FIFO
- * lookup and each purchase's `amountPaid` update happen there now, in
- * their own Postgres pass. This isn't a sync bridge (there's nothing to
- * keep consistent both ways): purchases simply live in Postgres now, so
- * this is where the code has to look to find what's actually outstanding
- * — the alternative is payments silently never marking any purchase paid.
+ * (oldest first). Mirrors recordCustomerPayment exactly — payment,
+ * ledger entry, supplier balance, FIFO allocation, and each purchase's
+ * amountPaid update all happen inside one Postgres transaction now that
+ * purchases, payments, and the ledger all live in the same database.
  */
 export async function recordSupplierPayment(input: {
   supplierId: string;
@@ -136,86 +128,76 @@ export async function recordSupplierPayment(input: {
   }
   const { supplierId, amount, method, note } = parsed.data;
 
-  // Suppliers moved to Postgres in M6 — see setSupplierOpeningBalance's doc
-  // comment for why existence is checked there instead of Firestore.
-  const [supplierRow] = await getDb().select().from(suppliersTable).where(eq(suppliersTable.id, supplierId));
-  if (!supplierRow) {
-    return { ok: false, error: "Supplier not found." };
-  }
-
-  const fsDb = getAdminDb();
-  const supplierRef = fsDb.collection("suppliers").doc(supplierId);
-  const paymentRef = fsDb.collection("supplierPayments").doc();
+  const db = getDb();
 
   try {
-    await fsDb.runTransaction(async (tx) => {
-      const now = new Date().toISOString();
+    await db.transaction(async (tx) => {
+      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, supplierId));
+      if (!supplier) {
+        throw new Error("Supplier not found.");
+      }
 
-      tx.set(paymentRef, {
-        supplierId,
-        amount,
-        method: method ?? null,
-        note: note ?? null,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-      });
+      const [payment] = await tx
+        .insert(supplierPayments)
+        .values({
+          supplierId,
+          amount: String(amount),
+          method: method ?? null,
+          note: note ?? null,
+          createdByUid: session.uid,
+          createdByEmail: session.email,
+        })
+        .returning();
 
-      tx.set(fsDb.collection("supplierLedgerTransactions").doc(), {
+      await tx.insert(supplierLedgerTransactions).values({
         supplierId,
         type: "payment",
         direction: "credit",
-        amount,
+        amount: String(amount),
         note: note?.trim() || `Payment${method ? ` (${method})` : ""}`,
-        paymentId: paymentRef.id,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        paymentId: payment.id,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.set(
-        supplierRef,
-        { balance: FieldValue.increment(-amount), updatedAt: now },
-        { merge: true }
-      );
+      await tx
+        .update(suppliers)
+        .set({ balance: sql`${suppliers.balance} - ${amount}`, updatedAt: new Date() })
+        .where(eq(suppliers.id, supplierId));
+
+      // FIFO-allocate against the supplier's outstanding finalized
+      // purchases, oldest finalized first.
+      let remaining = amount;
+      const outstandingPurchases = await tx
+        .select()
+        .from(purchases)
+        .where(and(eq(purchases.supplierId, supplierId), eq(purchases.status, "finalized")))
+        .orderBy(asc(purchases.finalizedAt));
+
+      for (const purchase of outstandingPurchases) {
+        if (remaining <= 0) break;
+        const subtotal = Number(purchase.subtotal);
+        const amountPaidSoFar = Number(purchase.amountPaid ?? "0");
+        const due = Math.round((subtotal - amountPaidSoFar) * 100) / 100;
+        if (!Number.isFinite(due) || due <= 0) continue;
+
+        const allocation = Math.min(remaining, due);
+        await tx
+          .update(purchases)
+          .set({ amountPaid: sql`${purchases.amountPaid} + ${allocation}`, updatedAt: new Date() })
+          .where(eq(purchases.id, purchase.id));
+        await tx.insert(supplierPaymentAllocations).values({
+          paymentId: payment.id,
+          purchaseId: purchase.id,
+          supplierId,
+          amount: String(allocation),
+        });
+        remaining = Math.round((remaining - allocation) * 100) / 100;
+      }
     });
 
-    // FIFO-allocate against Postgres purchases (see the function doc
-    // comment). Separate from the Firestore transaction above — Postgres
-    // and Firestore can't share one atomic transaction — but the
-    // Firestore side (payment + ledger + balance) is what's financially
-    // binding; this just marks which purchases that payment covers.
-    const pgDb = getDb();
-    let remaining = amount;
-    const outstandingPurchases = await pgDb
-      .select()
-      .from(purchases)
-      .where(and(eq(purchases.supplierId, supplierId), eq(purchases.status, "finalized")))
-      .orderBy(asc(purchases.finalizedAt));
-
-    for (const purchase of outstandingPurchases) {
-      if (remaining <= 0) break;
-      const subtotal = Number(purchase.subtotal);
-      const amountPaidSoFar = Number(purchase.amountPaid ?? "0");
-      const due = Math.round((subtotal - amountPaidSoFar) * 100) / 100;
-      if (!Number.isFinite(due) || due <= 0) continue;
-
-      const allocation = Math.min(remaining, due);
-      await pgDb
-        .update(purchases)
-        .set({ amountPaid: sql`${purchases.amountPaid} + ${allocation}`, updatedAt: new Date() })
-        .where(eq(purchases.id, purchase.id));
-      await fsDb.collection("supplierPaymentAllocations").add({
-        paymentId: paymentRef.id,
-        purchaseId: purchase.id,
-        supplierId,
-        amount: allocation,
-        createdAt: new Date().toISOString(),
-      });
-      remaining = Math.round((remaining - allocation) * 100) / 100;
-    }
-
+    revalidatePath(`/dashboard/suppliers/${supplierId}`);
+    revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
     return { ok: true };
   } catch (err) {
     return {
@@ -249,71 +231,63 @@ export async function voidSupplierPayment(input: {
   }
   const { paymentId, reason } = parsed.data;
 
-  const fsDb = getAdminDb();
-  const paymentRef = fsDb.collection("supplierPayments").doc(paymentId);
+  const db = getDb();
+  let supplierId: string | undefined;
 
   try {
-    const { allocations } = await fsDb.runTransaction(async (tx) => {
-      const paymentSnap = await tx.get(paymentRef);
-      if (!paymentSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [payment] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, paymentId));
+      if (!payment) {
         throw new Error("Payment not found.");
       }
-      const payment = paymentSnap.data() as {
-        supplierId: string;
-        amount: number;
-        voidedAt: string | null;
-      };
       if (payment.voidedAt != null) {
         throw new Error("This payment has already been voided.");
       }
+      supplierId = payment.supplierId;
 
-      const allocationsSnap = await tx.get(
-        fsDb.collection("supplierPaymentAllocations").where("paymentId", "==", paymentId)
-      );
-      const allocations = allocationsSnap.docs.map(
-        (d) => d.data() as { purchaseId: string; amount: number }
-      );
+      const allocations = await tx
+        .select()
+        .from(supplierPaymentAllocations)
+        .where(eq(supplierPaymentAllocations.paymentId, paymentId));
 
-      const now = new Date().toISOString();
-      const supplierRef = fsDb.collection("suppliers").doc(payment.supplierId);
-
-      tx.set(fsDb.collection("supplierLedgerTransactions").doc(), {
+      await tx.insert(supplierLedgerTransactions).values({
         supplierId: payment.supplierId,
         type: "payment_void",
         direction: "debit",
         amount: payment.amount,
         note: `Void of payment: ${reason}`,
         paymentId,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.set(
-        supplierRef,
-        { balance: FieldValue.increment(payment.amount), updatedAt: now },
-        { merge: true }
-      );
+      await tx
+        .update(suppliers)
+        .set({ balance: sql`${suppliers.balance} + ${payment.amount}`, updatedAt: new Date() })
+        .where(eq(suppliers.id, payment.supplierId));
 
-      tx.update(paymentRef, {
-        voidedAt: now,
-        voidedBy: { uid: session.uid, email: session.email },
-        voidReason: reason,
-      });
+      await tx
+        .update(supplierPayments)
+        .set({
+          voidedAt: new Date(),
+          voidedByUid: session.uid,
+          voidedByEmail: session.email,
+          voidReason: reason,
+        })
+        .where(eq(supplierPayments.id, paymentId));
 
-      return { allocations };
+      for (const allocation of allocations) {
+        await tx
+          .update(purchases)
+          .set({ amountPaid: sql`${purchases.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+          .where(eq(purchases.id, allocation.purchaseId));
+      }
     });
 
-    // Reverse this payment's own allocations against Postgres purchases —
-    // see recordSupplierPayment's comment on why purchases specifically
-    // live there.
-    const pgDb = getDb();
-    for (const allocation of allocations) {
-      await pgDb
-        .update(purchases)
-        .set({ amountPaid: sql`${purchases.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
-        .where(eq(purchases.id, allocation.purchaseId));
+    if (supplierId) {
+      revalidatePath(`/dashboard/suppliers/${supplierId}`);
+      revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
     }
-
     return { ok: true };
   } catch (err) {
     return {
