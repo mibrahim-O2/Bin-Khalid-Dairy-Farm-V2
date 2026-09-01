@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,28 +107,13 @@ function GenerateStatementDialog({ employeeId }: { employeeId: string }) {
   );
 }
 
-export function StatementsCard({ employeeId }: { employeeId: string }) {
-  const { user } = useCurrentUser();
-  const [statements, setStatements] = useState<EmployeeStatement[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "employeeStatements"),
-      where("employeeId", "==", employeeId),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        setStatements(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as EmployeeStatement));
-      },
-      () => setError("Failed to load statements. Try refreshing the page.")
-    );
-  }, [employeeId, user]);
-
+export function StatementsCard({
+  employeeId,
+  statements,
+}: {
+  employeeId: string;
+  statements: EmployeeStatement[];
+}) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 pt-6">
@@ -139,7 +121,6 @@ export function StatementsCard({ employeeId }: { employeeId: string }) {
           <h2 className="font-heading text-lg font-semibold text-foreground">Statements</h2>
           <GenerateStatementDialog employeeId={employeeId} />
         </div>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -150,13 +131,7 @@ export function StatementsCard({ employeeId }: { employeeId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {statements === null ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground">
-                    Loading…
-                  </TableCell>
-                </TableRow>
-              ) : statements.length === 0 ? (
+              {statements.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center text-muted-foreground">
                     No statements yet.

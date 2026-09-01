@@ -1,12 +1,9 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { eq } from "drizzle-orm";
 import Link from "next/link";
-import { doc, onSnapshot } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { getDb } from "@/lib/db/client";
+import { employeeStatements } from "@/lib/db/schema";
+import { toEmployeeStatement } from "@/lib/db/mappers";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { EmployeeStatement } from "@/types/employee-statement";
 import type { EmployeeLedgerTransaction } from "@/types/employee";
 
 const typeLabels: Record<EmployeeLedgerTransaction["type"], string> = {
@@ -29,32 +25,20 @@ const typeLabels: Record<EmployeeLedgerTransaction["type"], string> = {
   payment_void: "Payment Void",
 };
 
-export default function EmployeeStatementPage() {
-  const params = useParams<{ id: string; statementId: string }>();
-  const { user } = useCurrentUser();
-  const [statement, setStatement] = useState<EmployeeStatement | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    return onSnapshot(
-      doc(db, "employeeStatements", params.statementId),
-      (snap) => {
-        setStatement(snap.exists() ? ({ id: snap.id, ...snap.data() } as EmployeeStatement) : null);
-      },
-      () => setError("Failed to load this statement. Try refreshing the page.")
-    );
-  }, [params.statementId, user]);
-
-  if (error) return <p className="text-destructive">{error}</p>;
-  if (statement === undefined) return <p className="text-muted-foreground">Loading…</p>;
+export default async function EmployeeStatementPage({
+  params,
+}: {
+  params: Promise<{ id: string; statementId: string }>;
+}) {
+  const { id: employeeId, statementId } = await params;
+  const [row] = await getDb().select().from(employeeStatements).where(eq(employeeStatements.id, statementId));
+  const statement = row ? toEmployeeStatement(row) : null;
 
   if (statement === null) {
     return (
       <div className="flex flex-col gap-4">
         <p className="text-muted-foreground">Statement not found.</p>
-        <Link href={`/dashboard/employees/${params.id}`} className="text-sm text-primary hover:underline">
+        <Link href={`/dashboard/employees/${employeeId}`} className="text-sm text-primary hover:underline">
           Back to employee
         </Link>
       </div>
@@ -65,7 +49,7 @@ export default function EmployeeStatementPage() {
     <div className="flex flex-col gap-6">
       <div>
         <Link
-          href={`/dashboard/employees/${params.id}`}
+          href={`/dashboard/employees/${employeeId}`}
           className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" /> Back to {statement.employeeName}
