@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,7 +22,7 @@ import {
   type PurchasePaymentStatus,
   type PurchaseStatus,
 } from "@/types/purchase";
-import { createDraftPurchase } from "./create-draft-purchase";
+import { createDraftPurchase } from "./purchases/actions";
 
 const statusVariant: Record<PurchaseStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -47,39 +44,21 @@ const paymentStatusLabel: Record<PurchasePaymentStatus, string> = {
   paid: "Paid",
 };
 
-export function PurchasesList({ supplierId }: { supplierId: string }) {
+export function PurchasesList({ supplierId, purchases }: { supplierId: string; purchases: Purchase[] }) {
   const router = useRouter();
-  const { user } = useCurrentUser();
-  const [purchases, setPurchases] = useState<Purchase[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "purchases"),
-      where("supplierId", "==", supplierId),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        setPurchases(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Purchase));
-      },
-      () => setError("Failed to load purchases. Try refreshing the page.")
-    );
-  }, [supplierId, user]);
-
   async function handleNewPurchase() {
-    if (!user) return;
     setCreating(true);
-    try {
-      const purchaseId = await createDraftPurchase(supplierId, user.uid);
-      router.push(`/dashboard/suppliers/${supplierId}/purchases/${purchaseId}`);
-    } finally {
-      setCreating(false);
+    setError(null);
+    const result = await createDraftPurchase(supplierId);
+    setCreating(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    router.push(`/dashboard/suppliers/${supplierId}/purchases/${result.purchaseId}`);
   }
 
   return (
@@ -87,7 +66,7 @@ export function PurchasesList({ supplierId }: { supplierId: string }) {
       <CardContent className="flex flex-col gap-4 pt-6">
         <div className="flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold text-foreground">Purchases</h2>
-          <Button size="sm" disabled={creating || !user} onClick={handleNewPurchase}>
+          <Button size="sm" disabled={creating} onClick={handleNewPurchase}>
             New purchase
           </Button>
         </div>
@@ -103,13 +82,7 @@ export function PurchasesList({ supplierId }: { supplierId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {purchases === null ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Loading…
-                  </TableCell>
-                </TableRow>
-              ) : purchases.length === 0 ? (
+              {purchases.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground">
                     No purchases yet.

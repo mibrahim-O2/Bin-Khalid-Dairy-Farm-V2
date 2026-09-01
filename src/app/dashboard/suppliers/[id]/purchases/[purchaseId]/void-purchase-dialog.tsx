@@ -48,6 +48,8 @@ export function VoidPurchaseDialog({
     setOpen(false);
     if (result.replacementPurchaseId) {
       router.push(`/dashboard/suppliers/${supplierId}/purchases/${result.replacementPurchaseId}`);
+    } else {
+      router.refresh();
     }
   }
 

@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { RecordPaymentDialog } from "../record-payment-dialog";
-import { createDraftPurchase } from "../create-draft-purchase";
+import { createDraftPurchase } from "../purchases/actions";
 
 const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -45,11 +45,14 @@ export default function SupplierLedgerPage() {
   const [creatingPurchase, setCreatingPurchase] = useState(false);
 
   async function handleNewPurchase() {
-    if (!user) return;
     setCreatingPurchase(true);
     try {
-      const purchaseId = await createDraftPurchase(supplierId, user.uid);
-      router.push(`/dashboard/suppliers/${supplierId}/purchases/${purchaseId}`);
+      const result = await createDraftPurchase(supplierId);
+      if (result.ok) {
+        router.push(`/dashboard/suppliers/${supplierId}/purchases/${result.purchaseId}`);
+      } else {
+        setError(result.error);
+      }
     } finally {
       setCreatingPurchase(false);
     }
