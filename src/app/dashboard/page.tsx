@@ -1,6 +1,9 @@
 import { Users, Truck, HandCoins } from "lucide-react";
+import { count } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { getDb } from "@/lib/db/client";
+import { customers, suppliers } from "@/lib/db/schema";
 
 type Counts =
   | { ok: true; customers: number; suppliers: number; employees: number }
@@ -8,20 +11,23 @@ type Counts =
 
 async function getCounts(): Promise<Counts> {
   try {
-    const db = getAdminDb();
-    const [customers, suppliers, employees] = await Promise.all([
-      db.collection("customers").count().get(),
-      db.collection("suppliers").count().get(),
-      db.collection("employees").count().get(),
+    // Customers (M2) and suppliers (M6) live in Postgres now; employees
+    // haven't migrated yet (M10) so still counted from Firestore.
+    const pgDb = getDb();
+    const fsDb = getAdminDb();
+    const [[customerCount], [supplierCount], employees] = await Promise.all([
+      pgDb.select({ value: count() }).from(customers),
+      pgDb.select({ value: count() }).from(suppliers),
+      fsDb.collection("employees").count().get(),
     ]);
     return {
       ok: true,
-      customers: customers.data().count,
-      suppliers: suppliers.data().count,
+      customers: customerCount.value,
+      suppliers: supplierCount.value,
       employees: employees.data().count,
     };
   } catch {
-    // No Firebase project configured yet, or a transient error — the
+    // No Firebase/Postgres configured yet, or a transient error — the
     // dashboard shell should still render, just without live numbers.
     return { ok: false };
   }
