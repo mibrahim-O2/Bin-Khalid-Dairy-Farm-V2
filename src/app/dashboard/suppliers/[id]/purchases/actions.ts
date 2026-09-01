@@ -6,16 +6,16 @@
 // Quantity × Rate line item shape from src/lib/purchasing.ts (no
 // milk-style daily/extra/less calculation on the supplier side).
 //
-// The supplier's opening balance / payments / ledger still live in
-// src/app/dashboard/suppliers/actions.ts on Firestore until M8 — same
-// accepted interim gap as bills had before M4 migrated customer payments.
+// finalizePurchase/voidPurchase also write the supplier_ledger_transactions
+// row directly (added in M8, once that table itself moved to Postgres) —
+// mirrors finalizeBill/voidBill's ledger entries exactly.
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
-import { purchaseLineItems, purchases, suppliers } from "@/lib/db/schema";
+import { purchaseLineItems, purchases, supplierLedgerTransactions, suppliers } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
 import { calculateLineTotal, calculateSubtotal } from "@/lib/purchasing";
 
@@ -186,12 +186,17 @@ export async function finalizePurchase(input: { purchaseId: string }): Promise<A
           .where(eq(purchaseLineItems.id, c.row.id));
       }
 
-      // Note: this ledger entry stays out of scope for M7 — Domain B's
-      // ledger (supplierLedgerTransactions) is still Firestore until M8,
-      // same accepted interim gap as bills had before M4. Only the
-      // purchase itself and the supplier's Postgres balance are updated
-      // here; the Firestore-side ledger/balance sees this purchase once
-      // M8 migrates it.
+      await tx.insert(supplierLedgerTransactions).values({
+        supplierId: purchase.supplierId,
+        type: "purchase",
+        direction: "debit",
+        amount: String(subtotal),
+        note: "Purchase",
+        purchaseId,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
+      });
+
       await tx
         .update(suppliers)
         .set({ balance: sql`${suppliers.balance} + ${subtotal}`, updatedAt: now })
@@ -256,6 +261,17 @@ export async function voidPurchase(input: {
 
       const now = new Date();
       const subtotal = Number(purchase.subtotal);
+
+      await tx.insert(supplierLedgerTransactions).values({
+        supplierId: purchase.supplierId,
+        type: "purchase_void",
+        direction: "credit",
+        amount: String(subtotal),
+        note: `Void of purchase: ${reason}`,
+        purchaseId,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
+      });
 
       await tx
         .update(suppliers)
