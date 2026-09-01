@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import type { AuthorizedPerson } from "@/types/employee";
 import { AuthorizedPersonFormDialog } from "./authorized-person-form-dialog";
+import { setAuthorizedPersonActive } from "./authorized-people-actions";
 
 /**
  * "Given by" on an advance/payment form comes from this farm-managed list,
@@ -24,31 +23,21 @@ import { AuthorizedPersonFormDialog } from "./authorized-person-form-dialog";
  * Employees page for now since that's the only place it's consumed —
  * Settings (Phase 9) can surface/link to it later without moving the data.
  */
-export function AuthorizedPeopleCard() {
-  const { user } = useCurrentUser();
-  const [people, setPeople] = useState<AuthorizedPerson[] | null>(null);
+export function AuthorizedPeopleCard({ people }: { people: AuthorizedPerson[] }) {
+  const router = useRouter();
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(collection(db, "authorizedPeople"), orderBy("name"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        setPeople(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as AuthorizedPerson));
-      },
-      () => setError("Failed to load authorized people. Check your connection.")
-    );
-    return unsubscribe;
-  }, [user]);
-
   async function toggleActive(person: AuthorizedPerson) {
-    const db = getFirebaseDb();
-    await updateDoc(doc(db, "authorizedPeople", person.id), {
-      active: !person.active,
-      updatedAt: new Date().toISOString(),
-    });
+    setPendingId(person.id);
+    setError(null);
+    const result = await setAuthorizedPersonActive({ personId: person.id, active: !person.active });
+    setPendingId(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
   }
 
   return (
@@ -72,13 +61,7 @@ export function AuthorizedPeopleCard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {people === null ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground">
-                    Loading…
-                  </TableCell>
-                </TableRow>
-              ) : people.length === 0 ? (
+              {people.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center text-muted-foreground">
                     No one added yet.
@@ -102,7 +85,12 @@ export function AuthorizedPeopleCard() {
                           </Button>
                         }
                       />
-                      <Button variant="outline" size="sm" onClick={() => toggleActive(person)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pendingId === person.id}
+                        onClick={() => toggleActive(person)}
+                      >
                         {person.active ? "Archive" : "Unarchive"}
                       </Button>
                     </TableCell>

@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Employee } from "@/types/employee";
+import { createEmployee, updateEmployee } from "./crud-actions";
 
 type EmployeeFormDialogProps = {
   employee?: Employee;
@@ -26,7 +25,7 @@ type EmployeeFormDialogProps = {
 };
 
 export function EmployeeFormDialog({ employee, trigger, onCreated }: EmployeeFormDialogProps) {
-  const { user } = useCurrentUser();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(employee?.name ?? "");
   const [phone, setPhone] = useState(employee?.phone ?? "");
@@ -49,43 +48,27 @@ export function EmployeeFormDialog({ employee, trigger, onCreated }: EmployeeFor
       setError("Name is required.");
       return;
     }
-    if (!user) {
-      setError("Still loading your session — try again in a moment.");
-      return;
-    }
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      if (employee) {
-        await updateDoc(doc(db, "employees", employee.id), {
-          name: name.trim(),
-          phone: phone.trim() || null,
-          address: address.trim() || null,
-          updatedAt: now,
-        });
-      } else {
-        const ref = await addDoc(collection(db, "employees"), {
-          name: name.trim(),
-          phone: phone.trim() || null,
-          address: address.trim() || null,
-          active: true,
-          balance: 0,
-          hasOpeningBalance: false,
-          createdAt: now,
-          updatedAt: now,
-          createdBy: user.uid,
-        });
-        onCreated?.(ref.id);
-      }
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
+    if (employee) {
+      const result = await updateEmployee({ employeeId: employee.id, name, phone, address });
       setSaving(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+    } else {
+      const result = await createEmployee({ name, phone, address });
+      setSaving(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (result.employeeId) onCreated?.(result.employeeId);
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
