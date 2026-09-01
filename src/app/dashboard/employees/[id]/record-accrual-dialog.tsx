@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,9 +28,15 @@ function lastOfMonthIso() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
 }
 
-export function RecordAccrualDialog({ employeeId }: { employeeId: string }) {
+export function RecordAccrualDialog({
+  employeeId,
+  salaryHistory,
+}: {
+  employeeId: string;
+  salaryHistory: EmployeeSalaryHistoryEntry[];
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [history, setHistory] = useState<EmployeeSalaryHistoryEntry[]>([]);
   const [periodStart, setPeriodStart] = useState(firstOfMonthIso());
   const [periodEnd, setPeriodEnd] = useState(lastOfMonthIso());
   const [amount, setAmount] = useState("");
@@ -40,37 +45,34 @@ export function RecordAccrualDialog({ employeeId }: { employeeId: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Resets the form and does the initial pre-fill together, in the same
+  // effect — salaryHistory is now a stable server-fetched prop (not a live
+  // Firestore subscription that handed back a fresh array reference on
+  // every open), so a separate salaryHistory-keyed effect below would not
+  // re-run on a second open with unchanged data, leaving amount stuck at
+  // the "" this effect resets it to.
   useEffect(() => {
     if (!open) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "employeeSalaryHistory"),
-      where("employeeId", "==", employeeId),
-      orderBy("effectiveFrom", "desc")
-    );
-    return onSnapshot(q, (snapshot) => {
-      setHistory(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as EmployeeSalaryHistoryEntry));
-    });
-  }, [employeeId, open]);
-
-  useEffect(() => {
-    if (open) {
-      setPeriodStart(firstOfMonthIso());
-      setPeriodEnd(lastOfMonthIso());
-      setAmount("");
-      setAmountTouched(false);
-      setNote("");
-      setError(null);
-    }
+    const start = firstOfMonthIso();
+    setPeriodStart(start);
+    setPeriodEnd(lastOfMonthIso());
+    setAmountTouched(false);
+    setNote("");
+    setError(null);
+    const current = getCurrentSalary(salaryHistory, start);
+    setAmount(current ? String(current.monthlySalary) : "");
+    // Only the open transition should reset the form — salaryHistory is
+    // read fresh via getCurrentSalary() above, not tracked as a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Pre-fill the amount from the salary effective at the period's start —
-  // still freely editable (e.g. a partial month, a bonus).
+  // Re-prefills live as the user changes the period start while the dialog
+  // stays open — still freely editable (e.g. a partial month, a bonus).
   useEffect(() => {
-    if (amountTouched) return;
-    const current = getCurrentSalary(history, periodStart);
+    if (!open || amountTouched) return;
+    const current = getCurrentSalary(salaryHistory, periodStart);
     if (current) setAmount(String(current.monthlySalary));
-  }, [history, periodStart, amountTouched]);
+  }, [open, salaryHistory, periodStart, amountTouched]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -99,6 +101,7 @@ export function RecordAccrualDialog({ employeeId }: { employeeId: string }) {
       return;
     }
     setOpen(false);
+    router.refresh();
   }
 
   return (
@@ -150,7 +153,7 @@ export function RecordAccrualDialog({ employeeId }: { employeeId: string }) {
               }}
               required
             />
-            {history.length === 0 ? (
+            {salaryHistory.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No salary set yet — set one on this employee&apos;s page, or enter an amount
                 directly.

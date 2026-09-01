@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,28 +26,21 @@ import type { AuthorizedPerson } from "@/types/employee";
 import type { EmployeePaymentSource } from "@/types/employee-payment";
 import { recordEmployeePayment } from "../actions";
 
-export function RecordPaymentDialog({ employeeId }: { employeeId: string }) {
+export function RecordPaymentDialog({
+  employeeId,
+  authorizedPeople,
+}: {
+  employeeId: string;
+  authorizedPeople: AuthorizedPerson[];
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [people, setPeople] = useState<AuthorizedPerson[]>([]);
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState<EmployeePaymentSource>("ghar");
   const [givenBy, setGivenBy] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "authorizedPeople"),
-      where("active", "==", true),
-      orderBy("name")
-    );
-    return onSnapshot(q, (snapshot) => {
-      setPeople(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as AuthorizedPerson));
-    });
-  }, [open]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -80,6 +72,7 @@ export function RecordPaymentDialog({ employeeId }: { employeeId: string }) {
     setGivenBy("");
     setNote("");
     setOpen(false);
+    router.refresh();
   }
 
   return (
@@ -127,14 +120,14 @@ export function RecordPaymentDialog({ employeeId }: { employeeId: string }) {
                 <SelectValue placeholder="Select who gave it" />
               </SelectTrigger>
               <SelectContent>
-                {people.map((person) => (
+                {authorizedPeople.map((person) => (
                   <SelectItem key={person.id} value={person.name}>
                     {person.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {people.length === 0 ? (
+            {authorizedPeople.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No authorized people yet — add one on the Employees page first.
               </p>

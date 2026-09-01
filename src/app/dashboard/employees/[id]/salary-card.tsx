@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,28 +27,20 @@ import {
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { getCurrentSalary, type EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
+import { setEmployeeSalary } from "./salary-actions";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
 function SetSalaryDialog({ employeeId }: { employeeId: string }) {
-  const { user } = useCurrentUser();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [monthlySalary, setMonthlySalary] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(todayIso());
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setMonthlySalary("");
-      setEffectiveFrom(todayIso());
-      setNote("");
-      setError(null);
-    }
-  }, [open]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -59,30 +49,22 @@ function SetSalaryDialog({ employeeId }: { employeeId: string }) {
       setError("Enter a valid monthly salary greater than zero.");
       return;
     }
-    if (!user) {
-      setError("Still loading your session — try again in a moment.");
-      return;
-    }
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      await addDoc(collection(db, "employeeSalaryHistory"), {
-        employeeId,
-        monthlySalary: salary,
-        effectiveFrom,
-        note: note.trim() || null,
-        createdAt: now,
-        createdBy: user.uid,
-      });
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
-      setSaving(false);
+    const result = await setEmployeeSalary({
+      employeeId,
+      monthlySalary: salary,
+      effectiveFrom,
+      note: note.trim() || undefined,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
@@ -137,29 +119,14 @@ function SetSalaryDialog({ employeeId }: { employeeId: string }) {
   );
 }
 
-export function SalaryCard({ employeeId }: { employeeId: string }) {
-  const { user } = useCurrentUser();
-  const [history, setHistory] = useState<EmployeeSalaryHistoryEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "employeeSalaryHistory"),
-      where("employeeId", "==", employeeId),
-      orderBy("effectiveFrom", "desc")
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        setHistory(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as EmployeeSalaryHistoryEntry));
-      },
-      () => setError("Failed to load salary history. Try refreshing the page.")
-    );
-  }, [employeeId, user]);
-
-  const current = history ? getCurrentSalary(history) : null;
+export function SalaryCard({
+  employeeId,
+  history,
+}: {
+  employeeId: string;
+  history: EmployeeSalaryHistoryEntry[];
+}) {
+  const current = getCurrentSalary(history);
 
   return (
     <Card>
@@ -176,8 +143,7 @@ export function SalaryCard({ employeeId }: { employeeId: string }) {
             {current ? `per month, effective ${formatDate(current.effectiveFrom)}` : "No salary set yet."}
           </p>
         </div>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {history && history.length > 1 ? (
+        {history.length > 1 ? (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
