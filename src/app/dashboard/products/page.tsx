@@ -1,54 +1,19 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { asc } from "drizzle-orm";
+import { getDb } from "@/lib/db/client";
+import { products as productsTable } from "@/lib/db/schema";
+import { toProduct } from "@/lib/db/mappers";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent } from "@/components/ui/card";
-import type { Product } from "@/types/customer";
 import { ProductFormDialog } from "./product-form-dialog";
+import { ProductsTable } from "./products-table";
 
-export default function ProductsPage() {
-  // Wait for the Firebase client SDK's own auth state — otherwise this can
-  // lose a race against auth rehydration on a fresh page load and fail with
-  // permission-denied.
-  const { user } = useCurrentUser();
-  const [products, setProducts] = useState<Product[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const q = query(collection(db, "products"), orderBy("name"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        setProducts(
-          snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product)
-        );
-      },
-      () => setError("Failed to load products. Check your connection.")
-    );
-    return unsubscribe;
-  }, [user]);
-
-  async function toggleActive(product: Product) {
-    const db = getFirebaseDb();
-    await updateDoc(doc(db, "products", product.id), {
-      active: !product.active,
-      updatedAt: new Date().toISOString(),
-    });
-  }
+// Server Component — one-time fetch at request time, no client-side
+// onSnapshot listener. Mutations (add/edit/archive) go through Server
+// Actions and call router.refresh() to re-run this fetch; there is no
+// live cross-tab sync anymore, a deliberate trade-off for the Postgres
+// migration (see src/lib/db/README.md).
+export default async function ProductsPage() {
+  const rows = await getDb().select().from(productsTable).orderBy(asc(productsTable.name));
+  const products = rows.map(toProduct);
 
   return (
     <div className="flex flex-col gap-6">
@@ -62,74 +27,7 @@ export default function ProductsPage() {
         <ProductFormDialog trigger={<Button>Add product</Button>} />
       </div>
 
-      {error ? (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardContent className="pt-6 text-sm text-destructive">{error}</CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>Billing type</TableHead>
-                  <TableHead>Default rate</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products === null ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      Loading…
-                    </TableCell>
-                  </TableRow>
-                ) : products.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      No products yet. Add your first one, or run{" "}
-                      <code>node scripts/seed-products.mjs</code> to pre-seed Milk, Ghee, Dahi,
-                      and Makhan.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  products.map((product) => (
-                    <TableRow key={product.id}>
-                      <TableCell className="font-medium text-foreground">{product.name}</TableCell>
-                      <TableCell>{product.unit}</TableCell>
-                      <TableCell className="capitalize">{product.billingType}</TableCell>
-                      <TableCell>{product.defaultRate}</TableCell>
-                      <TableCell>
-                        <Badge variant={product.active ? "default" : "secondary"}>
-                          {product.active ? "Active" : "Archived"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="flex justify-end gap-2 text-right">
-                        <ProductFormDialog
-                          product={product}
-                          trigger={
-                            <Button variant="outline" size="sm">
-                              Edit
-                            </Button>
-                          }
-                        />
-                        <Button variant="outline" size="sm" onClick={() => toggleActive(product)}>
-                          {product.active ? "Archive" : "Unarchive"}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <ProductsTable products={products} />
     </div>
   );
 }

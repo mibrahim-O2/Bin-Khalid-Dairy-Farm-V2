@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Product, ProductBillingType } from "@/types/customer";
+import { createProduct, updateProduct } from "./actions";
 
 type ProductFormDialogProps = {
   product?: Product;
@@ -30,6 +30,7 @@ type ProductFormDialogProps = {
 };
 
 export function ProductFormDialog({ product, trigger }: ProductFormDialogProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(product?.name ?? "");
   const [unit, setUnit] = useState(product?.unit ?? "");
@@ -64,34 +65,16 @@ export function ProductFormDialog({ product, trigger }: ProductFormDialogProps) 
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      if (product) {
-        await updateDoc(doc(db, "products", product.id), {
-          name: name.trim(),
-          unit: unit.trim(),
-          billingType,
-          defaultRate: rate,
-          updatedAt: now,
-        });
-      } else {
-        await addDoc(collection(db, "products"), {
-          name: name.trim(),
-          unit: unit.trim(),
-          billingType,
-          defaultRate: rate,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
-      setSaving(false);
+    const result = product
+      ? await updateProduct({ productId: product.id, name, unit, billingType, defaultRate: rate })
+      : await createProduct({ name, unit, billingType, defaultRate: rate });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
