@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db/client";
 import { billLineItems, bills, counters, customerLedgerTransactions, customers } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
 import { calculateDays, calculateLineTotals, calculateSubtotal } from "@/lib/billing";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -71,8 +72,8 @@ const lineItemSchema = z.object({
 
 const updateDraftSchema = z.object({
   billId: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
+  startDate: isoDateSchema,
+  endDate: isoDateSchema,
   lineItems: z.array(lineItemSchema),
   note: z.string().max(2000).optional(),
 });

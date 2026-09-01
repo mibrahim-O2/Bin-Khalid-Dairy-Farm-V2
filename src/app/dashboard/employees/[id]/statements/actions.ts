@@ -8,13 +8,14 @@ import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { employeeLedgerTransactions, employeeStatements, employees } from "@/lib/db/schema";
 import { toEmployeeLedgerTransaction } from "@/lib/db/mappers";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
 
 const generateSchema = z.object({
   employeeId: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
+  startDate: isoDateSchema,
+  endDate: isoDateSchema,
 });
 
 function round2(value: number): number {

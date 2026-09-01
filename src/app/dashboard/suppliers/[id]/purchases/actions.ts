@@ -18,6 +18,7 @@ import { getDb } from "@/lib/db/client";
 import { purchaseLineItems, purchases, supplierLedgerTransactions, suppliers } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
 import { calculateLineTotal, calculateSubtotal } from "@/lib/purchasing";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -69,7 +70,7 @@ const lineItemSchema = z.object({
 
 const updateDraftSchema = z.object({
   purchaseId: z.string().min(1),
-  purchaseDate: z.string().min(1),
+  purchaseDate: isoDateSchema,
   lineItems: z.array(lineItemSchema),
   note: z.string().max(2000).optional(),
 });

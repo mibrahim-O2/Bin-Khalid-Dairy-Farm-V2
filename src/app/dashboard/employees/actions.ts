@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { employeeLedgerTransactions, employeePayments, employeeSalaryAccruals, employees } from "@/lib/db/schema";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -94,8 +95,8 @@ export async function setEmployeeOpeningBalance(input: {
 
 const recordAccrualSchema = z.object({
   employeeId: z.string().min(1),
-  periodStart: z.string().min(1),
-  periodEnd: z.string().min(1),
+  periodStart: isoDateSchema,
+  periodEnd: isoDateSchema,
   amount: z.number().positive(),
   note: z.string().max(500).optional(),
 });

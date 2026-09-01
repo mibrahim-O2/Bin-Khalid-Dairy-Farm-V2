@@ -11,13 +11,14 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { employeeSalaryHistory } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 const setSalarySchema = z.object({
   employeeId: z.string().min(1),
   monthlySalary: z.number().positive(),
-  effectiveFrom: z.string().min(1),
+  effectiveFrom: isoDateSchema,
   note: z.string().max(500).optional(),
 });
 

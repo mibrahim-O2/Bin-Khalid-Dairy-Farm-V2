@@ -8,13 +8,14 @@ import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { supplierLedgerTransactions, supplierStatements, suppliers } from "@/lib/db/schema";
 import { toSupplierLedgerTransaction } from "@/lib/db/mappers";
+import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
 
 const generateSchema = z.object({
   supplierId: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
+  startDate: isoDateSchema,
+  endDate: isoDateSchema,
 });
 
 function round2(value: number): number {
