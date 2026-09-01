@@ -1,9 +1,27 @@
 # Database layer (Supabase / Postgres / Drizzle)
 
-Migrating off Firestore — see the M0-M13 migration plan agreed with the
-Owner. This directory is the Postgres side; Firebase Authentication is
-untouched (session cookies, custom claims for `active`/`role`, the Owner
-check) and stays in `src/lib/firebase/`.
+Migration off Firestore is complete (M0-M13). Every domain — Customers,
+Products/Rates, Bills, Suppliers, Farm Supply Items, Purchases, Employees,
+Salary History/Accruals, all three domains' Payments/Ledgers/Statements,
+plus Users/Pending-Users/activity_logs — now lives entirely in Postgres.
+Firebase Authentication is untouched (session cookies, custom claims for
+`active`/`role`, the Owner check) and is the only thing still in
+`src/lib/firebase/`; nothing in the app reads or writes Firestore data
+anymore (`firestore.rules` is deny-all, kept only so a `firebase deploy`
+never accidentally reopens a stale collection).
+
+**Mid-migration simplification, M3 onward**: the plan originally called for
+a per-domain backfill script plus a transitional Firestore↔Postgres
+dual-write bridge while each domain migrated one piece at a time. Partway
+through (after M2), the Owner confirmed all existing Firestore data was
+disposable test/dev data, not real business data — so from M3 onward the
+migration skipped backfills and bridges entirely: each domain was built
+fresh on empty Postgres tables and cut over directly, accepting brief,
+explicitly-documented interim gaps (e.g. bills moved to Postgres in M3
+while customer payments stayed on Firestore until M4) rather than
+maintaining bidirectional sync. M2's bridge (already built) was then
+removed retroactively. This is why some git history/comments from M2-M3
+mention backfill scripts or bridges that later migrations didn't need.
 
 ## Trust boundary
 
@@ -32,13 +50,13 @@ up), but if the anon key ever leaked, or a future feature reached for
 `supabase-js` without thinking this through, RLS is the backstop that
 makes that a non-event instead of an open database.
 
-`SUPABASE_SERVICE_ROLE_KEY` is not used anywhere yet — nothing in this app
-goes through PostgREST/`supabase-js`. It stays in `.env.local` for when
-Supabase Realtime or Storage actually get wired up (Realtime is the
-tentatively-planned mechanism for a live Pending Users list in M1 — that
-still needs its own RLS-for-Realtime decision when we get there, since
-Realtime's `postgres_changes` delivery respects RLS the same way PostgREST
-does).
+`SUPABASE_SERVICE_ROLE_KEY` is not used anywhere — nothing in this app goes
+through PostgREST/`supabase-js`, and that ended up true for the whole
+migration, not just M0: the Pending Users page (M1) reads straight off
+Firebase Auth's own user list (`getAdminAuth().listUsers()`), never
+Realtime or Postgres, so the RLS-for-Realtime question this paragraph used
+to flag never actually came up. The key stays in `.env.local` only in case
+Supabase Realtime or Storage get wired up for some future feature.
 
 ## Money columns
 
