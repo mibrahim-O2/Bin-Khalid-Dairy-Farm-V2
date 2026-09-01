@@ -10,12 +10,15 @@ import type {
   products,
   purchaseLineItems,
   purchases,
+  supplierLedgerTransactions,
+  supplierStatements,
   suppliers,
 } from "./schema";
 import type { Customer, CustomerLedgerTransaction, CustomerRate, Product } from "@/types/customer";
 import type { Bill, BillLineItem } from "@/types/bill";
-import type { FarmSupplyItem, Supplier } from "@/types/supplier";
+import type { FarmSupplyItem, Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase, PurchaseLineItem } from "@/types/purchase";
+import type { SupplierStatement } from "@/types/supplier-statement";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
 // objects) into the exact TS shape every existing component already
@@ -125,6 +128,40 @@ export function toPurchase(
     voidReason: row.voidReason,
     replacesPurchaseId: row.replacesPurchaseId,
     replacedByPurchaseId: row.replacedByPurchaseId,
+  };
+}
+
+export function toSupplierLedgerTransaction(
+  row: typeof supplierLedgerTransactions.$inferSelect
+): SupplierLedgerTransaction {
+  return {
+    id: row.id,
+    supplierId: row.supplierId,
+    type: row.type,
+    direction: row.direction,
+    amount: toNumber(row.amount),
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+    purchaseId: row.purchaseId ?? undefined,
+    paymentId: row.paymentId ?? undefined,
+  };
+}
+
+export function toSupplierStatement(row: typeof supplierStatements.$inferSelect): SupplierStatement {
+  return {
+    id: row.id,
+    supplierId: row.supplierId,
+    supplierName: row.supplierName,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    openingBalance: toNumber(row.openingBalance),
+    closingBalance: toNumber(row.closingBalance),
+    // Stored as jsonb — already the exact SupplierLedgerTransaction[] shape
+    // at write time (see generateSupplierStatement), just numbers already.
+    transactions: row.transactions as SupplierLedgerTransaction[],
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
   };
 }
 
