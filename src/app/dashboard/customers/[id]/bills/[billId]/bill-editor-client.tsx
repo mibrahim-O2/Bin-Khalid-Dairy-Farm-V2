@@ -32,6 +32,8 @@ import { getBillPaymentStatus, type Bill, type BillLineItem, type BillPaymentSta
 import type { Customer, CustomerRate, Product } from "@/types/customer";
 import { finalizeBill, updateDraftBill } from "../actions";
 import { VoidBillDialog } from "./void-bill-dialog";
+import { ShareImageButton } from "@/components/invoice/share-image-button";
+import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -530,7 +532,16 @@ export function BillEditorClient({
           </>
         ) : null}
         {bill.status === "finalized" ? (
-          <VoidBillDialog billId={bill.id} customerId={customerId} />
+          <>
+            <VoidBillDialog billId={bill.id} customerId={customerId} />
+            <ShareImageButton
+              fileName={`${bill.billNumber ?? "bill"}.png`}
+              shareTitle={`Bill ${bill.billNumber ?? ""}`}
+              shareText={`${customer.name} — ${formatAmount(bill.totalPayable ?? bill.subtotal)}`}
+            >
+              <BillInvoiceTemplate bill={bill} customer={customer} />
+            </ShareImageButton>
+          </>
         ) : null}
       </div>
     </div>
