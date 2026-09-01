@@ -33,7 +33,6 @@ export type Product = {
 };
 
 export type CustomerRate = {
-  /** `${customerId}_${productId}` */
   id: string;
   customerId: string;
   productId: string;
