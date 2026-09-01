@@ -1,11 +1,13 @@
 "use server";
 
+// Supplier statements, fully on Postgres (M9) — no Firestore involvement.
+
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { asc, eq } from "drizzle-orm";
 import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
-import { suppliers } from "@/lib/db/schema";
+import { supplierLedgerTransactions, supplierStatements, suppliers } from "@/lib/db/schema";
+import { toSupplierLedgerTransaction } from "@/lib/db/mappers";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
 
@@ -24,7 +26,7 @@ function round2(value: number): number {
  * a second ledger. The underlying purchases/payments remain the source of
  * truth; this freezes a date range of them (plus opening/closing balance)
  * into a shareable document, matching the customer bill pattern. Never
- * edited after creation — a re-generate just creates a new statement doc.
+ * edited after creation — a re-generate just creates a new statement row.
  */
 export async function generateSupplierStatement(input: {
   supplierId: string;
@@ -45,62 +47,60 @@ export async function generateSupplierStatement(input: {
     return { ok: false, error: "End date must be on or after the start date." };
   }
 
-  const db = getAdminDb();
+  const db = getDb();
 
   try {
-    // Suppliers moved to Postgres in M6 — read the name from there, not the
-    // Firestore doc (which stops being written to for new suppliers).
-    const [supplierRow] = await getDb().select().from(suppliers).where(eq(suppliers.id, supplierId));
-    if (!supplierRow) {
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
+    if (!supplier) {
       return { ok: false, error: "Supplier not found." };
     }
-    const supplier = { name: supplierRow.name };
 
-    const allTransactionsSnap = await db
-      .collection("supplierLedgerTransactions")
-      .where("supplierId", "==", supplierId)
-      .orderBy("createdAt", "asc")
-      .get();
+    const allTransactionRows = await db
+      .select()
+      .from(supplierLedgerTransactions)
+      .where(eq(supplierLedgerTransactions.supplierId, supplierId))
+      .orderBy(asc(supplierLedgerTransactions.createdAt));
 
     const startIso = `${startDate}T00:00:00.000Z`;
     const endIso = `${endDate}T23:59:59.999Z`;
 
     let openingBalance = 0;
-    const transactionsInRange: Array<Record<string, unknown>> = [];
+    const transactionsInRange = [];
 
-    for (const doc of allTransactionsSnap.docs) {
-      const tx = doc.data() as { createdAt: string; direction: "debit" | "credit"; amount: number };
-      const delta = tx.direction === "debit" ? tx.amount : -tx.amount;
-      if (tx.createdAt < startIso) {
+    for (const row of allTransactionRows) {
+      const entry = toSupplierLedgerTransaction(row);
+      const delta = entry.direction === "debit" ? entry.amount : -entry.amount;
+      if (entry.createdAt < startIso) {
         openingBalance += delta;
-      } else if (tx.createdAt <= endIso) {
-        transactionsInRange.push({ id: doc.id, ...tx });
+      } else if (entry.createdAt <= endIso) {
+        transactionsInRange.push(entry);
       }
     }
 
     openingBalance = round2(openingBalance);
     const closingBalance = round2(
-      transactionsInRange.reduce((balance, tx) => {
-        const t = tx as { direction: "debit" | "credit"; amount: number };
-        return balance + (t.direction === "debit" ? t.amount : -t.amount);
-      }, openingBalance)
+      transactionsInRange.reduce(
+        (balance, entry) => balance + (entry.direction === "debit" ? entry.amount : -entry.amount),
+        openingBalance
+      )
     );
 
-    const now = new Date().toISOString();
-    const statementRef = db.collection("supplierStatements").doc();
-    await statementRef.set({
-      supplierId,
-      supplierName: supplier.name,
-      startDate,
-      endDate,
-      openingBalance,
-      closingBalance,
-      transactions: transactionsInRange,
-      createdAt: now,
-      createdBy: { uid: session.uid, email: session.email },
-    });
+    const [statement] = await db
+      .insert(supplierStatements)
+      .values({
+        supplierId,
+        supplierName: supplier.name,
+        startDate,
+        endDate,
+        openingBalance: String(openingBalance),
+        closingBalance: String(closingBalance),
+        transactions: transactionsInRange,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
+      })
+      .returning();
 
-    return { ok: true, statementId: statementRef.id };
+    return { ok: true, statementId: statement.id };
   } catch (err) {
     return {
       ok: false,
