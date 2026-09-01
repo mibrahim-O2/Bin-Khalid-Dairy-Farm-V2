@@ -2,39 +2,12 @@
 
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
 import { getDb } from "@/lib/db/client";
-import { customers } from "@/lib/db/schema";
-
-/**
- * TRANSITIONAL dual-write, removed once M5 finishes migrating this file to
- * Postgres. `customers.balance`/`hasOpeningBalance` are cached fields
- * derived from the ledger — Firestore stays authoritative for them until
- * the ledger itself (bills/payments) migrates, but the Postgres `customers`
- * row (source of truth for name/phone/address since M2) needs the same
- * cached balance kept current too, or the migrated customer list/detail
- * pages would show a stale number the moment any bill or payment fires.
- * Best-effort: logged, not thrown, if it fails — the Firestore write above
- * is what actually matters financially; a stale cached number in Postgres
- * self-corrects on the next successful financial action.
- */
-async function syncPostgresBalance(customerId: string, delta: number, extra?: { hasOpeningBalance: true }) {
-  try {
-    await getDb()
-      .update(customers)
-      .set({
-        balance: sql`${customers.balance} + ${delta}`,
-        updatedAt: new Date(),
-        ...(extra ? { hasOpeningBalance: true } : {}),
-      })
-      .where(eq(customers.id, customerId));
-  } catch (err) {
-    console.error(`[transitional] Failed to sync Postgres balance for customer ${customerId}:`, err);
-  }
-}
+import { bills, customerRates, customers } from "@/lib/db/schema";
 
 const openingBalanceSchema = z.object({
   customerId: z.string().min(1),
@@ -47,11 +20,13 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Records a customer's opening balance as a real ledger transaction (never
- * an editable field — see SYSTEM_ARCHITECTURE.md rule 4). This is the first
- * financial write in the project: it must go through a Server Action using
- * the Admin SDK, atomically, per the trust boundary in that doc — the
- * client is never allowed to write customerLedgerTransactions directly
- * (Firestore rules deny it outright).
+ * an editable field — see SYSTEM_ARCHITECTURE.md rule 4). Still Firestore —
+ * this whole file migrates to Postgres in M4/M5. NOTE: this only updates
+ * the Firestore customer doc's cached balance; the Postgres customers row
+ * (source of truth for name/phone/address/active since M2) is NOT kept in
+ * sync here. All data is disposable test data during this migration, so
+ * that inconsistency is accepted deliberately rather than bridged — see
+ * the Owner's M3 direction. It resolves itself once this file migrates.
  */
 export async function setCustomerOpeningBalance(input: {
   customerId: string;
@@ -107,7 +82,6 @@ export async function setCustomerOpeningBalance(input: {
         updatedAt: now,
       });
     });
-    await syncPostgresBalance(customerId, delta, { hasOpeningBalance: true });
     return { ok: true };
   } catch (err) {
     return {
@@ -130,7 +104,16 @@ const recordPaymentSchema = z.object({
  * bill's payment status (see getBillPaymentStatus()) updates automatically.
  * Any amount left after every outstanding bill is settled still reduces the
  * customer's overall balance — it just isn't tied to a specific bill (e.g.
- * an advance payment). All in one Admin SDK transaction.
+ * an advance payment).
+ *
+ * The payment record, ledger entry, and customer balance are still
+ * Firestore (this file migrates fully in M4/M5) — but bills themselves
+ * moved to Postgres in M3, so the FIFO lookup and each bill's `amountPaid`
+ * update happen there now, in their own Postgres transaction. This isn't a
+ * sync bridge (there's nothing to keep consistent both ways): bills simply
+ * live in Postgres now, so this is where the code has to look to find what
+ * a customer actually owes, full stop — the alternative is payments
+ * silently never marking any bill paid.
  */
 export async function recordCustomerPayment(input: {
   customerId: string;
@@ -156,24 +139,16 @@ export async function recordCustomerPayment(input: {
   }
   const { customerId, amount, method, note } = parsed.data;
 
-  const db = getAdminDb();
-  const customerRef = db.collection("customers").doc(customerId);
-  const paymentRef = db.collection("payments").doc();
+  const fsDb = getAdminDb();
+  const customerRef = fsDb.collection("customers").doc(customerId);
+  const paymentRef = fsDb.collection("payments").doc();
 
   try {
-    await db.runTransaction(async (tx) => {
+    await fsDb.runTransaction(async (tx) => {
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists) {
         throw new Error("Customer not found.");
       }
-
-      const outstandingBillsSnap = await tx.get(
-        db
-          .collection("bills")
-          .where("customerId", "==", customerId)
-          .where("status", "==", "finalized")
-          .orderBy("finalizedAt", "asc")
-      );
 
       const now = new Date().toISOString();
 
@@ -189,7 +164,7 @@ export async function recordCustomerPayment(input: {
         voidReason: null,
       });
 
-      tx.set(db.collection("customerLedgerTransactions").doc(), {
+      tx.set(fsDb.collection("customerLedgerTransactions").doc(), {
         customerId,
         type: "payment",
         direction: "credit",
@@ -204,35 +179,43 @@ export async function recordCustomerPayment(input: {
         balance: FieldValue.increment(-amount),
         updatedAt: now,
       });
-
-      let remaining = amount;
-      for (const billDoc of outstandingBillsSnap.docs) {
-        if (remaining <= 0) break;
-        const bill = billDoc.data() as { subtotal: number; amountPaid?: number };
-        // Bills finalized before `amountPaid` existed have no such field in
-        // Firestore at all — without this default, `subtotal - undefined`
-        // is NaN, and `NaN <= 0` is false, so the skip-guard below never
-        // fires and a NaN reaches FieldValue.increment() further down.
-        const amountPaidSoFar = bill.amountPaid ?? 0;
-        const due = Math.round((bill.subtotal - amountPaidSoFar) * 100) / 100;
-        if (!Number.isFinite(due) || due <= 0) continue;
-
-        const allocation = Math.min(remaining, due);
-        tx.update(billDoc.ref, {
-          amountPaid: FieldValue.increment(allocation),
-          updatedAt: now,
-        });
-        tx.set(db.collection("paymentAllocations").doc(), {
-          paymentId: paymentRef.id,
-          billId: billDoc.id,
-          customerId,
-          amount: allocation,
-          createdAt: now,
-        });
-        remaining = Math.round((remaining - allocation) * 100) / 100;
-      }
     });
-    await syncPostgresBalance(customerId, -amount);
+
+    // FIFO-allocate against Postgres bills (see the function doc comment).
+    // Separate from the Firestore transaction above — Postgres and
+    // Firestore can't share one atomic transaction — but the Firestore
+    // side (payment + ledger + balance) is what's financially binding;
+    // this just marks which bills that payment covers.
+    const pgDb = getDb();
+    let remaining = amount;
+    const outstandingBills = await pgDb
+      .select()
+      .from(bills)
+      .where(and(eq(bills.customerId, customerId), eq(bills.status, "finalized")))
+      .orderBy(asc(bills.finalizedAt));
+
+    for (const bill of outstandingBills) {
+      if (remaining <= 0) break;
+      const subtotal = Number(bill.subtotal);
+      const amountPaidSoFar = Number(bill.amountPaid ?? "0");
+      const due = Math.round((subtotal - amountPaidSoFar) * 100) / 100;
+      if (!Number.isFinite(due) || due <= 0) continue;
+
+      const allocation = Math.min(remaining, due);
+      await pgDb
+        .update(bills)
+        .set({ amountPaid: sql`${bills.amountPaid} + ${allocation}`, updatedAt: new Date() })
+        .where(eq(bills.id, bill.id));
+      await getAdminDb().collection("paymentAllocations").add({
+        paymentId: paymentRef.id,
+        billId: bill.id,
+        customerId,
+        amount: allocation,
+        createdAt: new Date().toISOString(),
+      });
+      remaining = Math.round((remaining - allocation) * 100) / 100;
+    }
+
     return { ok: true };
   } catch (err) {
     return {
@@ -253,7 +236,7 @@ const voidPaymentSchema = z.object({
  * FIFO allocations (each bill's amountPaid drops back by what this specific
  * payment contributed, so getBillPaymentStatus() re-derives correctly even
  * if other payments also touched the same bill) and the customer's cached
- * balance — via a reversing debit ledger entry, all in one transaction.
+ * balance — via a reversing debit ledger entry.
  */
 export async function voidCustomerPayment(input: {
   paymentId: string;
@@ -270,11 +253,11 @@ export async function voidCustomerPayment(input: {
   }
   const { paymentId, reason } = parsed.data;
 
-  const db = getAdminDb();
-  const paymentRef = db.collection("payments").doc(paymentId);
+  const fsDb = getAdminDb();
+  const paymentRef = fsDb.collection("payments").doc(paymentId);
 
   try {
-    const payment = await db.runTransaction(async (tx) => {
+    const { allocations } = await fsDb.runTransaction(async (tx) => {
       const paymentSnap = await tx.get(paymentRef);
       if (!paymentSnap.exists) {
         throw new Error("Payment not found.");
@@ -289,13 +272,16 @@ export async function voidCustomerPayment(input: {
       }
 
       const allocationsSnap = await tx.get(
-        db.collection("paymentAllocations").where("paymentId", "==", paymentId)
+        fsDb.collection("paymentAllocations").where("paymentId", "==", paymentId)
+      );
+      const allocations = allocationsSnap.docs.map(
+        (d) => d.data() as { billId: string; amount: number }
       );
 
       const now = new Date().toISOString();
-      const customerRef = db.collection("customers").doc(payment.customerId);
+      const customerRef = fsDb.collection("customers").doc(payment.customerId);
 
-      tx.set(db.collection("customerLedgerTransactions").doc(), {
+      tx.set(fsDb.collection("customerLedgerTransactions").doc(), {
         customerId: payment.customerId,
         type: "payment_void",
         direction: "debit",
@@ -311,25 +297,25 @@ export async function voidCustomerPayment(input: {
         updatedAt: now,
       });
 
-      // Reverse only this payment's own allocations — never touch what
-      // other payments contributed to the same bill.
-      for (const allocationDoc of allocationsSnap.docs) {
-        const allocation = allocationDoc.data() as { billId: string; amount: number };
-        tx.update(db.collection("bills").doc(allocation.billId), {
-          amountPaid: FieldValue.increment(-allocation.amount),
-          updatedAt: now,
-        });
-      }
-
       tx.update(paymentRef, {
         voidedAt: now,
         voidedBy: { uid: session.uid, email: session.email },
         voidReason: reason,
       });
 
-      return payment;
+      return { payment, allocations };
     });
-    await syncPostgresBalance(payment.customerId, payment.amount);
+
+    // Reverse this payment's own allocations against Postgres bills — see
+    // recordCustomerPayment's comment on why bills specifically live there.
+    const pgDb = getDb();
+    for (const allocation of allocations) {
+      await pgDb
+        .update(bills)
+        .set({ amountPaid: sql`${bills.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+        .where(eq(bills.id, allocation.billId));
+    }
+
     return { ok: true };
   } catch (err) {
     return {
@@ -350,11 +336,14 @@ const deleteCustomerSchema = z.object({
 const TRANSACTION_SAFE_OP_LIMIT = 480;
 
 /**
- * Permanently deletes a customer AND their entire financial trail — bills
- * (every status), payments (including voided ones), payment allocations,
+ * Permanently deletes a customer AND their entire financial trail.
+ * Firestore side: payments (including voided ones), payment allocations,
  * customerLedgerTransactions (this covers opening-balance entries too:
  * they're just a ledger transaction with type "opening_balance", not a
- * separate collection), and the rate schedule (+ history).
+ * separate collection). Postgres side: the customer row itself, which
+ * cascades to bills, bill line items, customer rates (+ history), and any
+ * customer_ledger_transactions already there — see the ON DELETE CASCADE
+ * foreign keys in src/lib/db/schema.
  *
  * This is a DELIBERATE, EXPLICIT exception to SYSTEM_ARCHITECTURE.md's
  * "never hard-delete a finalized financial record" rule — confirmed by the
@@ -362,17 +351,6 @@ const TRANSACTION_SAFE_OP_LIMIT = 480;
  * confirmation, and is meant to fully remove a customer rather than
  * preserve an orphaned trail. Do not extend this pattern to any other
  * delete path without the same explicit sign-off.
- *
- * Atomicity: when everything fits under Firestore's ~500-operation limit
- * (the overwhelmingly common case for a single customer), this all happens
- * in one transaction — genuinely atomic, fully succeeds or fully fails.
- * A customer with an extraordinary volume of history that exceeds that
- * limit falls back to sequential batches; Firestore has no primitive for
- * true atomicity beyond ~500 ops, so that path is instead deliberately
- * ordered to stay safely retriable — every financial record is deleted
- * before the customer document itself, so a failure partway through still
- * leaves the customer doc in place (nothing orphaned with no customer to
- * identify it), and simply re-running the delete finishes the job.
  */
 export async function deleteCustomer(input: {
   customerId: string;
@@ -392,8 +370,8 @@ export async function deleteCustomer(input: {
   }
   const { customerId, reason } = parsed.data;
 
-  const db = getAdminDb();
-  const customerRef = db.collection("customers").doc(customerId);
+  const fsDb = getAdminDb();
+  const customerRef = fsDb.collection("customers").doc(customerId);
 
   try {
     const customerSnap = await customerRef.get();
@@ -403,30 +381,35 @@ export async function deleteCustomer(input: {
     const customer = customerSnap.data() as { name: string };
 
     const byCustomerId = (collection: string) =>
-      db.collection(collection).where("customerId", "==", customerId).get();
+      fsDb.collection(collection).where("customerId", "==", customerId).get();
 
-    const [billsSnap, paymentsSnap, allocationsSnap, ledgerSnap, ratesSnap] = await Promise.all([
-      byCustomerId("bills"),
+    const [paymentsSnap, allocationsSnap, ledgerSnap] = await Promise.all([
       byCustomerId("payments"),
       byCustomerId("paymentAllocations"),
       byCustomerId("customerLedgerTransactions"),
-      byCustomerId("customerRates"),
     ]);
-    const rateHistorySnaps = await Promise.all(
-      ratesSnap.docs.map((rateDoc) => rateDoc.ref.collection("history").get())
-    );
 
     const refsToDelete = [
-      ...billsSnap.docs.map((d) => d.ref),
       ...paymentsSnap.docs.map((d) => d.ref),
       ...allocationsSnap.docs.map((d) => d.ref),
       ...ledgerSnap.docs.map((d) => d.ref),
-      ...ratesSnap.docs.map((d) => d.ref),
-      ...rateHistorySnaps.flatMap((snap) => snap.docs.map((d) => d.ref)),
     ];
 
+    // Counted before the Postgres cascade below removes them, for an
+    // accurate activity-log record of what this purge actually did.
+    const pgBillsCount = await getDb()
+      .select()
+      .from(bills)
+      .where(eq(bills.customerId, customerId))
+      .then((rows) => rows.length);
+    const pgRatesCount = await getDb()
+      .select()
+      .from(customerRates)
+      .where(eq(customerRates.customerId, customerId))
+      .then((rows) => rows.length);
+
     const now = new Date().toISOString();
-    const logRef = db.collection("activityLogs").doc();
+    const logRef = fsDb.collection("activityLogs").doc();
     const logData = {
       action: "customer_deleted",
       customerId,
@@ -435,46 +418,44 @@ export async function deleteCustomer(input: {
       performedBy: { uid: session.uid, email: session.email },
       createdAt: now,
       purgedCounts: {
-        bills: billsSnap.size,
+        bills: pgBillsCount,
         payments: paymentsSnap.size,
         paymentAllocations: allocationsSnap.size,
         ledgerTransactions: ledgerSnap.size,
-        customerRates: ratesSnap.size,
+        customerRates: pgRatesCount,
       },
     };
 
     if (refsToDelete.length + 2 <= TRANSACTION_SAFE_OP_LIMIT) {
-      await db.runTransaction(async (tx) => {
+      await fsDb.runTransaction(async (tx) => {
         for (const ref of refsToDelete) tx.delete(ref);
         tx.delete(customerRef);
         tx.set(logRef, logData);
       });
     } else {
       for (let i = 0; i < refsToDelete.length; i += TRANSACTION_SAFE_OP_LIMIT) {
-        const batch = db.batch();
+        const batch = fsDb.batch();
         for (const ref of refsToDelete.slice(i, i + TRANSACTION_SAFE_OP_LIMIT)) {
           batch.delete(ref);
         }
         await batch.commit();
       }
-      const finalBatch = db.batch();
+      const finalBatch = fsDb.batch();
       finalBatch.delete(customerRef);
       finalBatch.set(logRef, logData);
       await finalBatch.commit();
     }
 
-    // TRANSITIONAL — the Postgres customers row (source of truth for
-    // name/phone/address since M2) needs to disappear too, or it'd become
-    // a "ghost" customer: visible in the migrated customer list with a
-    // name and balance, but every one of its Firestore-side records
-    // (bills, payments, ledger, rates) already gone. Best-effort: the
-    // Firestore purge above is what actually matters — a leftover
-    // Postgres row is a cosmetic, manually-fixable loose end, not a
-    // financial-integrity one, so this never fails the action itself.
+    // Postgres: deleting the customer row cascades to bills, bill line
+    // items, customer rates (+ history), and any customer_ledger_transactions
+    // already there. Best-effort — the Firestore purge above is the
+    // Owner-facing "this customer is gone" guarantee; a leftover Postgres
+    // row would be a manually-fixable loose end, not a financial-integrity
+    // one.
     try {
       await getDb().delete(customers).where(eq(customers.id, customerId));
     } catch (err) {
-      console.error(`[transitional] Failed to delete Postgres customer row ${customerId}:`, err);
+      console.error(`Failed to delete Postgres customer row ${customerId}:`, err);
     }
 
     return { ok: true };
