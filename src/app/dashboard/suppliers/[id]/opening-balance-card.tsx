@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,37 +21,18 @@ import { setSupplierOpeningBalance } from "../actions";
 export function OpeningBalanceCard({
   supplierId,
   hasOpeningBalance,
+  entry,
 }: {
   supplierId: string;
   hasOpeningBalance: boolean;
+  entry: SupplierLedgerTransaction | null;
 }) {
-  const { user } = useCurrentUser();
-  const [entry, setEntry] = useState<SupplierLedgerTransaction | null>(null);
-  const [listenerError, setListenerError] = useState<string | null>(null);
+  const router = useRouter();
   const [direction, setDirection] = useState<SupplierLedgerDirection>("debit");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!hasOpeningBalance || !user) return;
-    const db = getFirebaseDb();
-    const q = query(
-      collection(db, "supplierLedgerTransactions"),
-      where("supplierId", "==", supplierId),
-      where("type", "==", "opening_balance"),
-      limit(1)
-    );
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const doc = snapshot.docs[0];
-        setEntry(doc ? ({ id: doc.id, ...doc.data() } as SupplierLedgerTransaction) : null);
-      },
-      () => setListenerError("Failed to load the opening balance. Try refreshing the page.")
-    );
-  }, [supplierId, hasOpeningBalance, user]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -78,7 +57,9 @@ export function OpeningBalanceCard({
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
+      return;
     }
+    router.refresh();
   }
 
   if (hasOpeningBalance) {
@@ -88,9 +69,7 @@ export function OpeningBalanceCard({
           <CardTitle>Opening balance</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          {listenerError ? (
-            <p className="text-destructive">{listenerError}</p>
-          ) : entry ? (
+          {entry ? (
             <>
               <p className="text-foreground">
                 {entry.direction === "debit" ? "Farm owed" : "Farm had credit of"}{" "}
@@ -100,7 +79,7 @@ export function OpeningBalanceCard({
               <p className="mt-1">{entry.note}</p>
             </>
           ) : (
-            "Loading…"
+            "No opening balance entry found."
           )}
         </CardContent>
       </Card>

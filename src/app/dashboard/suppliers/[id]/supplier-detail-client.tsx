@@ -7,8 +7,9 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Supplier } from "@/types/supplier";
+import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase } from "@/types/purchase";
+import type { SupplierStatement } from "@/types/supplier-statement";
 import { formatAmount } from "@/lib/format-number";
 import { SupplierFormDialog } from "../supplier-form-dialog";
 import { setSupplierActive } from "../crud-actions";
@@ -20,9 +21,13 @@ import { StatementsCard } from "./statements-card";
 export function SupplierDetailClient({
   supplier,
   purchases,
+  openingBalanceEntry,
+  statements,
 }: {
   supplier: Supplier | null;
   purchases: Purchase[];
+  openingBalanceEntry: SupplierLedgerTransaction | null;
+  statements: SupplierStatement[];
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -121,11 +126,15 @@ export function SupplierDetailClient({
         </Card>
       </div>
 
-      <OpeningBalanceCard supplierId={supplier.id} hasOpeningBalance={supplier.hasOpeningBalance} />
+      <OpeningBalanceCard
+        supplierId={supplier.id}
+        hasOpeningBalance={supplier.hasOpeningBalance}
+        entry={openingBalanceEntry}
+      />
 
       <PurchasesList supplierId={supplier.id} purchases={purchases} />
 
-      <StatementsCard supplierId={supplier.id} />
+      <StatementsCard supplierId={supplier.id} statements={statements} />
     </div>
   );
 }
