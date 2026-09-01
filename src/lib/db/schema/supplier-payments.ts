@@ -8,7 +8,8 @@ export const supplierPayments = pgTable(
   "supplier_payments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    supplierId: uuid("supplier_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    supplierId: text("supplier_id")
       .notNull()
       .references(() => suppliers.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -36,7 +37,8 @@ export const supplierPaymentAllocations = pgTable(
     purchaseId: uuid("purchase_id")
       .notNull()
       .references(() => purchases.id, { onDelete: "cascade" }),
-    supplierId: uuid("supplier_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    supplierId: text("supplier_id")
       .notNull()
       .references(() => suppliers.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -52,7 +54,8 @@ export const supplierLedgerTransactions = pgTable(
   "supplier_ledger_transactions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    supplierId: uuid("supplier_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    supplierId: text("supplier_id")
       .notNull()
       .references(() => suppliers.id, { onDelete: "cascade" }),
     type: supplierLedgerTypeEnum("type").notNull(),
@@ -80,7 +83,8 @@ export const supplierStatements = pgTable(
   "supplier_statements",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    supplierId: uuid("supplier_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    supplierId: text("supplier_id")
       .notNull()
       .references(() => suppliers.id, { onDelete: "cascade" }),
     supplierName: text("supplier_name").notNull(), // snapshot

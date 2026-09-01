@@ -8,6 +8,13 @@
       "when": 1788220394757,
       "tag": "0000_misty_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788222480972,
+      "tag": "0001_friendly_moondragon",
+      "breakpoints": true
     }
   ]
 }

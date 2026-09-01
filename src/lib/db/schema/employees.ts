@@ -1,7 +1,11 @@
 import { boolean, date, index, numeric, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const employees = pgTable("employees", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  // text, app-generated — see customers.id's comment in
+  // schema/customers.ts; salary accruals/payments/ledger haven't migrated
+  // off Firestore yet (M11-M12) and reference an employee by its original
+  // Firestore document id in the meantime.
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone"),
   address: text("address"),
@@ -19,10 +23,13 @@ export const employees = pgTable("employees", {
 
 /**
  * Who an advance/payment was "given by" — a farm-managed list rather than a
- * hardcoded set of names. Non-financial master data.
+ * hardcoded set of names. Non-financial master data. Nothing references
+ * this by id today (employeePayments.givenBy snapshots the name instead),
+ * but kept as text for consistency with every other master-data table
+ * here, in case something ever does.
  */
 export const authorizedPeople = pgTable("authorized_people", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -37,7 +44,8 @@ export const employeeSalaryHistory = pgTable(
   "employee_salary_history",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    employeeId: uuid("employee_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    employeeId: text("employee_id")
       .notNull()
       .references(() => employees.id, { onDelete: "cascade" }),
     monthlySalary: numeric("monthly_salary", { precision: 12, scale: 2 }).notNull(),

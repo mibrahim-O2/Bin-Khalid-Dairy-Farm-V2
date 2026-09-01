@@ -7,7 +7,8 @@ export const payments = pgTable(
   "payments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -35,7 +36,7 @@ export const paymentAllocations = pgTable(
     billId: uuid("bill_id")
       .notNull()
       .references(() => bills.id, { onDelete: "cascade" }),
-    customerId: uuid("customer_id")
+    customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -51,7 +52,8 @@ export const customerLedgerTransactions = pgTable(
   "customer_ledger_transactions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     type: customerLedgerTypeEnum("type").notNull(),

@@ -2,7 +2,17 @@ import { boolean, index, numeric, pgTable, text, timestamp, unique, uuid } from 
 import { productBillingTypeEnum } from "./enums";
 
 export const customers = pgTable("customers", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  // Plain text, app-generated (crypto.randomUUID() for a genuinely new
+  // customer) — NOT a native `uuid` column with a Postgres-side default.
+  // Bills/payments/ledger transactions haven't migrated off Firestore yet
+  // (that's M3-M5) and reference a customer by its *original Firestore
+  // document ID* in the meantime; backfilling this row with a fresh
+  // Postgres-generated id would silently orphan every one of that
+  // customer's existing Firestore records until their own migration.
+  // Preserving the original id string here (whatever shape it is) keeps
+  // every not-yet-migrated cross-reference working untouched throughout
+  // the transition. See src/lib/db/README.md.
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone"),
   address: text("address"),
@@ -22,7 +32,9 @@ export const customers = pgTable("customers", {
 }, (t) => [index("ix_customers_name").on(t.name)]).enableRLS();
 
 export const products = pgTable("products", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  // Same reasoning as customers.id — bill line items on Firestore reference
+  // a product by its original document id until M3 migrates bills.
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   unit: text("unit").notNull(),
   billingType: productBillingTypeEnum("billing_type").notNull(),
@@ -37,10 +49,10 @@ export const customerRates = pgTable(
   "customer_rates",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id")
+    customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
-    productId: uuid("product_id")
+    productId: text("product_id")
       .notNull()
       .references(() => products.id),
     rate: numeric("rate", { precision: 12, scale: 2 }).notNull(),

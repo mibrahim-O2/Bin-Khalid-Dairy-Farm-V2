@@ -11,7 +11,8 @@ export const employeeSalaryAccruals = pgTable(
   "employee_salary_accruals",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    employeeId: uuid("employee_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    employeeId: text("employee_id")
       .notNull()
       .references(() => employees.id, { onDelete: "cascade" }),
     periodStart: date("period_start").notNull(),
@@ -40,7 +41,8 @@ export const employeePayments = pgTable(
   "employee_payments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    employeeId: uuid("employee_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    employeeId: text("employee_id")
       .notNull()
       .references(() => employees.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -64,7 +66,8 @@ export const employeeLedgerTransactions = pgTable(
   "employee_ledger_transactions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    employeeId: uuid("employee_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    employeeId: text("employee_id")
       .notNull()
       .references(() => employees.id, { onDelete: "cascade" }),
     type: employeeLedgerTypeEnum("type").notNull(),
@@ -89,7 +92,8 @@ export const employeeStatements = pgTable(
   "employee_statements",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    employeeId: uuid("employee_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    employeeId: text("employee_id")
       .notNull()
       .references(() => employees.id, { onDelete: "cascade" }),
     employeeName: text("employee_name").notNull(), // snapshot

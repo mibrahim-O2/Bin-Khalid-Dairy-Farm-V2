@@ -7,7 +7,8 @@ export const bills = pgTable(
   "bills",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    customerId: text("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     // Unique when present; Postgres allows multiple NULLs under a unique
@@ -63,7 +64,7 @@ export const billLineItems = pgTable(
     billId: uuid("bill_id")
       .notNull()
       .references(() => bills.id, { onDelete: "cascade" }),
-    productId: uuid("product_id")
+    productId: text("product_id")
       .notNull()
       .references(() => products.id),
     // Snapshots — never re-derived from the live product doc later.

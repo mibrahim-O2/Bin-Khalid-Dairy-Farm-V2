@@ -7,7 +7,8 @@ export const purchases = pgTable(
   "purchases",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    supplierId: uuid("supplier_id")
+    // text, not uuid — see customers.id's comment in schema/customers.ts.
+    supplierId: text("supplier_id")
       .notNull()
       .references(() => suppliers.id, { onDelete: "cascade" }),
     status: purchaseStatusEnum("status").notNull().default("draft"),
@@ -47,7 +48,7 @@ export const purchaseLineItems = pgTable(
     purchaseId: uuid("purchase_id")
       .notNull()
       .references(() => purchases.id, { onDelete: "cascade" }),
-    itemId: uuid("item_id")
+    itemId: text("item_id")
       .notNull()
       .references(() => farmSupplyItems.id),
     // Snapshots — never re-derived from the live farm supply item doc later.
