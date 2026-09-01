@@ -6,10 +6,16 @@ import type {
   customerLedgerTransactions,
   customerRates,
   customers,
+  farmSupplyItems,
   products,
+  purchaseLineItems,
+  purchases,
+  suppliers,
 } from "./schema";
 import type { Customer, CustomerLedgerTransaction, CustomerRate, Product } from "@/types/customer";
 import type { Bill, BillLineItem } from "@/types/bill";
+import type { FarmSupplyItem, Supplier } from "@/types/supplier";
+import type { Purchase, PurchaseLineItem } from "@/types/purchase";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
 // objects) into the exact TS shape every existing component already
@@ -52,6 +58,73 @@ export function toCustomerRate(row: typeof customerRates.$inferSelect): Customer
     rate: toNumber(row.rate),
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedByUid ?? "",
+  };
+}
+
+export function toSupplier(row: typeof suppliers.$inferSelect): Supplier {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    address: row.address,
+    active: row.active,
+    balance: toNumber(row.balance),
+    hasOpeningBalance: row.hasOpeningBalance,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+  };
+}
+
+export function toFarmSupplyItem(row: typeof farmSupplyItems.$inferSelect): FarmSupplyItem {
+  return {
+    id: row.id,
+    name: row.name,
+    unit: row.unit,
+    defaultRate: toNumber(row.defaultRate),
+    active: row.active,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toPurchaseLineItem(row: typeof purchaseLineItems.$inferSelect): PurchaseLineItem {
+  return {
+    itemId: row.itemId,
+    itemName: row.itemName,
+    unit: row.unit,
+    rate: toNumber(row.rate),
+    quantity: toNumber(row.quantity),
+    lineTotal: toNumber(row.lineTotal),
+  };
+}
+
+/** `lineItemRows` must already be sorted by `sortOrder`. */
+export function toPurchase(
+  row: typeof purchases.$inferSelect,
+  lineItemRows: (typeof purchaseLineItems.$inferSelect)[]
+): Purchase {
+  return {
+    id: row.id,
+    supplierId: row.supplierId,
+    status: row.status,
+    purchaseDate: row.purchaseDate,
+    lineItems: lineItemRows.map(toPurchaseLineItem),
+    subtotal: toNumber(row.subtotal),
+    previousBalance: row.previousBalance === null ? null : toNumber(row.previousBalance),
+    totalPayable: row.totalPayable === null ? null : toNumber(row.totalPayable),
+    amountPaid: toNumber(row.amountPaid),
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+    finalizedAt: row.finalizedAt ? row.finalizedAt.toISOString() : null,
+    finalizedBy: row.finalizedByUid ? { uid: row.finalizedByUid, email: row.finalizedByEmail } : null,
+    voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
+    voidedBy: row.voidedByUid ? { uid: row.voidedByUid, email: row.voidedByEmail } : null,
+    voidReason: row.voidReason,
+    replacesPurchaseId: row.replacesPurchaseId,
+    replacedByPurchaseId: row.replacedByPurchaseId,
   };
 }
 
