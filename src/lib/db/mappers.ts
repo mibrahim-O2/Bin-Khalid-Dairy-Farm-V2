@@ -1,7 +1,14 @@
 import "server-only";
 import { toNumber } from "@/lib/money";
-import type { billLineItems, bills, customerRates, customers, products } from "./schema";
-import type { Customer, CustomerRate, Product } from "@/types/customer";
+import type {
+  billLineItems,
+  bills,
+  customerLedgerTransactions,
+  customerRates,
+  customers,
+  products,
+} from "./schema";
+import type { Customer, CustomerLedgerTransaction, CustomerRate, Product } from "@/types/customer";
 import type { Bill, BillLineItem } from "@/types/bill";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
@@ -45,6 +52,23 @@ export function toCustomerRate(row: typeof customerRates.$inferSelect): Customer
     rate: toNumber(row.rate),
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedByUid ?? "",
+  };
+}
+
+export function toCustomerLedgerTransaction(
+  row: typeof customerLedgerTransactions.$inferSelect
+): CustomerLedgerTransaction {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    type: row.type,
+    direction: row.direction,
+    amount: toNumber(row.amount),
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+    billId: row.billId ?? undefined,
+    paymentId: row.paymentId ?? undefined,
   };
 }
 
