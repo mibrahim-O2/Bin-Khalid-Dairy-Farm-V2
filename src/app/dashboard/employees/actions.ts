@@ -1,9 +1,20 @@
 "use server";
 
+// Employee opening balance / salary accruals / advances-payments / ledger,
+// fully on Postgres (M11) — no Firestore involvement anywhere in this
+// file. Mirrors customers/actions.ts and suppliers/actions.ts, but
+// Domain C's sign convention is REVERSED: credit = salary accrued (farm
+// owes more), debit = advance/payment taken (farm owes less). There's no
+// FIFO allocation here at all — an advance is taken against future,
+// not-yet-determined salary, so it just reduces the running balance
+// directly (see EmployeePayment in src/types/employee-payment.ts).
+
 import { z } from "zod";
-import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
+import { getDb } from "@/lib/db/client";
+import { employeeLedgerTransactions, employeePayments, employeeSalaryAccruals, employees } from "@/lib/db/schema";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -15,11 +26,11 @@ const openingBalanceSchema = z.object({
 });
 
 /**
- * Records an employee's opening balance as a real ledger transaction — same
- * pattern as setSupplierOpeningBalance/setCustomerOpeningBalance, but for
- * Domain C (Employees), where the sign convention is REVERSED: credit =
- * farm owes the employee more, debit = farm owes them less (an advance
- * already outstanding when they were added to the system).
+ * Records an employee's opening balance as a real ledger transaction —
+ * same pattern as setSupplierOpeningBalance/setCustomerOpeningBalance, but
+ * for Domain C where the sign convention is reversed: credit = farm owes
+ * the employee more, debit = farm owes them less (an advance already
+ * outstanding when they were added to the system).
  */
 export async function setEmployeeOpeningBalance(input: {
   employeeId: string;
@@ -38,40 +49,40 @@ export async function setEmployeeOpeningBalance(input: {
   }
   const { employeeId, direction, amount, note } = parsed.data;
 
-  const db = getAdminDb();
-  const employeeRef = db.collection("employees").doc(employeeId);
-  const ledgerRef = db.collection("employeeLedgerTransactions").doc();
+  const db = getDb();
+  // Reversed vs customers/suppliers: credit increases balance here.
+  const delta = direction === "credit" ? amount : -amount;
 
   try {
-    await db.runTransaction(async (tx) => {
-      const employeeSnap = await tx.get(employeeRef);
-      if (!employeeSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [employee] = await tx.select().from(employees).where(eq(employees.id, employeeId));
+      if (!employee) {
         throw new Error("Employee not found.");
       }
-      if (employeeSnap.data()?.hasOpeningBalance) {
+      if (employee.hasOpeningBalance) {
         throw new Error("Opening balance already recorded for this employee.");
       }
 
-      // Reversed vs customers/suppliers: credit increases balance here.
-      const delta = direction === "credit" ? amount : -amount;
-      const now = new Date().toISOString();
-
-      tx.set(ledgerRef, {
+      await tx.insert(employeeLedgerTransactions).values({
         employeeId,
         type: "opening_balance",
         direction,
-        amount,
+        amount: String(amount),
         note,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.update(employeeRef, {
-        balance: FieldValue.increment(delta),
-        hasOpeningBalance: true,
-        updatedAt: now,
-      });
+      await tx
+        .update(employees)
+        .set({
+          balance: sql`${employees.balance} + ${delta}`,
+          hasOpeningBalance: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, employeeId));
     });
+    revalidatePath(`/dashboard/employees/${employeeId}`);
     return { ok: true };
   } catch (err) {
     return {
@@ -117,49 +128,47 @@ export async function recordSalaryAccrual(input: {
     return { ok: false, error: "Period end must be on or after the period start." };
   }
 
-  const db = getAdminDb();
-  const employeeRef = db.collection("employees").doc(employeeId);
-  const accrualRef = db.collection("employeeSalaryAccruals").doc();
+  const db = getDb();
 
   try {
-    await db.runTransaction(async (tx) => {
-      const employeeSnap = await tx.get(employeeRef);
-      if (!employeeSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [employee] = await tx.select().from(employees).where(eq(employees.id, employeeId));
+      if (!employee) {
         throw new Error("Employee not found.");
       }
 
-      const now = new Date().toISOString();
+      const [accrual] = await tx
+        .insert(employeeSalaryAccruals)
+        .values({
+          employeeId,
+          periodStart,
+          periodEnd,
+          amount: String(amount),
+          note: note?.trim() || null,
+          status: "finalized",
+          createdByUid: session.uid,
+          createdByEmail: session.email,
+        })
+        .returning();
 
-      tx.set(accrualRef, {
-        employeeId,
-        periodStart,
-        periodEnd,
-        amount,
-        note: note?.trim() || null,
-        status: "finalized",
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-      });
-
-      tx.set(db.collection("employeeLedgerTransactions").doc(), {
+      await tx.insert(employeeLedgerTransactions).values({
         employeeId,
         type: "salary_accrual",
         direction: "credit",
-        amount,
+        amount: String(amount),
         note: note?.trim() || "Salary accrual",
-        accrualId: accrualRef.id,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        accrualId: accrual.id,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.update(employeeRef, {
-        balance: FieldValue.increment(amount),
-        updatedAt: now,
-      });
+      await tx
+        .update(employees)
+        .set({ balance: sql`${employees.balance} + ${amount}`, updatedAt: new Date() })
+        .where(eq(employees.id, employeeId));
     });
+    revalidatePath(`/dashboard/employees/${employeeId}`);
+    revalidatePath(`/dashboard/employees/${employeeId}/ledger`);
     return { ok: true };
   } catch (err) {
     return {
@@ -193,50 +202,55 @@ export async function voidSalaryAccrual(input: {
   }
   const { accrualId, reason } = parsed.data;
 
-  const db = getAdminDb();
-  const accrualRef = db.collection("employeeSalaryAccruals").doc(accrualId);
+  const db = getDb();
+  let employeeId: string | undefined;
 
   try {
-    await db.runTransaction(async (tx) => {
-      const accrualSnap = await tx.get(accrualRef);
-      if (!accrualSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [accrual] = await tx
+        .select()
+        .from(employeeSalaryAccruals)
+        .where(eq(employeeSalaryAccruals.id, accrualId));
+      if (!accrual) {
         throw new Error("Salary accrual not found.");
       }
-      const accrual = accrualSnap.data() as {
-        employeeId: string;
-        amount: number;
-        status: string;
-      };
       if (accrual.status !== "finalized") {
         throw new Error("Only a finalized salary accrual can be voided.");
       }
+      employeeId = accrual.employeeId;
 
-      const now = new Date().toISOString();
-      const employeeRef = db.collection("employees").doc(accrual.employeeId);
-
-      tx.set(db.collection("employeeLedgerTransactions").doc(), {
+      await tx.insert(employeeLedgerTransactions).values({
         employeeId: accrual.employeeId,
         type: "salary_accrual_void",
         direction: "debit",
         amount: accrual.amount,
         note: `Void of salary accrual: ${reason}`,
         accrualId,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.update(employeeRef, {
-        balance: FieldValue.increment(-accrual.amount),
-        updatedAt: now,
-      });
+      await tx
+        .update(employees)
+        .set({ balance: sql`${employees.balance} - ${accrual.amount}`, updatedAt: new Date() })
+        .where(eq(employees.id, accrual.employeeId));
 
-      tx.update(accrualRef, {
-        status: "void",
-        voidedAt: now,
-        voidedBy: { uid: session.uid, email: session.email },
-        voidReason: reason,
-      });
+      await tx
+        .update(employeeSalaryAccruals)
+        .set({
+          status: "void",
+          voidedAt: new Date(),
+          voidedByUid: session.uid,
+          voidedByEmail: session.email,
+          voidReason: reason,
+        })
+        .where(eq(employeeSalaryAccruals.id, accrualId));
     });
+
+    if (employeeId) {
+      revalidatePath(`/dashboard/employees/${employeeId}`);
+      revalidatePath(`/dashboard/employees/${employeeId}/ledger`);
+    }
     return { ok: true };
   } catch (err) {
     return {
@@ -258,8 +272,7 @@ const recordPaymentSchema = z.object({
  * Records an advance/payment given to an employee: a real ledger debit
  * (farm owes the employee less). No FIFO allocation against specific
  * accruals — an advance is taken against future, not-yet-determined
- * salary, so it just reduces the running balance directly. See
- * EmployeePayment in src/types/employee-payment.ts.
+ * salary, so it just reduces the running balance directly.
  */
 export async function recordEmployeePayment(input: {
   employeeId: string;
@@ -283,48 +296,46 @@ export async function recordEmployeePayment(input: {
   }
   const { employeeId, amount, source, givenBy, note } = parsed.data;
 
-  const db = getAdminDb();
-  const employeeRef = db.collection("employees").doc(employeeId);
-  const paymentRef = db.collection("employeePayments").doc();
+  const db = getDb();
 
   try {
-    await db.runTransaction(async (tx) => {
-      const employeeSnap = await tx.get(employeeRef);
-      if (!employeeSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [employee] = await tx.select().from(employees).where(eq(employees.id, employeeId));
+      if (!employee) {
         throw new Error("Employee not found.");
       }
 
-      const now = new Date().toISOString();
+      const [payment] = await tx
+        .insert(employeePayments)
+        .values({
+          employeeId,
+          amount: String(amount),
+          source,
+          givenBy,
+          note: note?.trim() || null,
+          createdByUid: session.uid,
+          createdByEmail: session.email,
+        })
+        .returning();
 
-      tx.set(paymentRef, {
-        employeeId,
-        amount,
-        source,
-        givenBy,
-        note: note?.trim() || null,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
-        voidedAt: null,
-        voidedBy: null,
-        voidReason: null,
-      });
-
-      tx.set(db.collection("employeeLedgerTransactions").doc(), {
+      await tx.insert(employeeLedgerTransactions).values({
         employeeId,
         type: "payment",
         direction: "debit",
-        amount,
+        amount: String(amount),
         note: note?.trim() || `Advance (${source === "ghar" ? "Ghar" : "Dukan"}, given by ${givenBy})`,
-        paymentId: paymentRef.id,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        paymentId: payment.id,
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.update(employeeRef, {
-        balance: FieldValue.increment(-amount),
-        updatedAt: now,
-      });
+      await tx
+        .update(employees)
+        .set({ balance: sql`${employees.balance} - ${amount}`, updatedAt: new Date() })
+        .where(eq(employees.id, employeeId));
     });
+    revalidatePath(`/dashboard/employees/${employeeId}`);
+    revalidatePath(`/dashboard/employees/${employeeId}/ledger`);
     return { ok: true };
   } catch (err) {
     return {
@@ -359,49 +370,51 @@ export async function voidEmployeePayment(input: {
   }
   const { paymentId, reason } = parsed.data;
 
-  const db = getAdminDb();
-  const paymentRef = db.collection("employeePayments").doc(paymentId);
+  const db = getDb();
+  let employeeId: string | undefined;
 
   try {
-    await db.runTransaction(async (tx) => {
-      const paymentSnap = await tx.get(paymentRef);
-      if (!paymentSnap.exists) {
+    await db.transaction(async (tx) => {
+      const [payment] = await tx.select().from(employeePayments).where(eq(employeePayments.id, paymentId));
+      if (!payment) {
         throw new Error("Payment not found.");
       }
-      const payment = paymentSnap.data() as {
-        employeeId: string;
-        amount: number;
-        voidedAt: string | null;
-      };
       if (payment.voidedAt != null) {
         throw new Error("This payment has already been voided.");
       }
+      employeeId = payment.employeeId;
 
-      const now = new Date().toISOString();
-      const employeeRef = db.collection("employees").doc(payment.employeeId);
-
-      tx.set(db.collection("employeeLedgerTransactions").doc(), {
+      await tx.insert(employeeLedgerTransactions).values({
         employeeId: payment.employeeId,
         type: "payment_void",
         direction: "credit",
         amount: payment.amount,
         note: `Void of payment: ${reason}`,
         paymentId,
-        createdAt: now,
-        createdBy: { uid: session.uid, email: session.email },
+        createdByUid: session.uid,
+        createdByEmail: session.email,
       });
 
-      tx.update(employeeRef, {
-        balance: FieldValue.increment(payment.amount),
-        updatedAt: now,
-      });
+      await tx
+        .update(employees)
+        .set({ balance: sql`${employees.balance} + ${payment.amount}`, updatedAt: new Date() })
+        .where(eq(employees.id, payment.employeeId));
 
-      tx.update(paymentRef, {
-        voidedAt: now,
-        voidedBy: { uid: session.uid, email: session.email },
-        voidReason: reason,
-      });
+      await tx
+        .update(employeePayments)
+        .set({
+          voidedAt: new Date(),
+          voidedByUid: session.uid,
+          voidedByEmail: session.email,
+          voidReason: reason,
+        })
+        .where(eq(employeePayments.id, paymentId));
     });
+
+    if (employeeId) {
+      revalidatePath(`/dashboard/employees/${employeeId}`);
+      revalidatePath(`/dashboard/employees/${employeeId}/ledger`);
+    }
     return { ok: true };
   } catch (err) {
     return {
