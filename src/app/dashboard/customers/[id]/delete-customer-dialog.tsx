@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +22,6 @@ export function DeleteCustomerDialog({
   customerId: string;
   customerName: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -39,8 +37,14 @@ export function DeleteCustomerDialog({
       setError(result.error);
       return;
     }
-    router.push("/dashboard/customers");
-    router.refresh();
+    // A plain router.push()+refresh() can land on a stale client Router
+    // Cache entry for /dashboard/customers (e.g. prefetched by the "Back to
+    // customers" link before the delete happened), briefly showing the
+    // just-deleted customer until something else forces a refetch. A full
+    // navigation always fetches fresh from the server, which is worth the
+    // one-time full-page reload for this rare, Owner-only, already-confirmed
+    // destructive action.
+    window.location.assign("/dashboard/customers");
   }
 
   return (
