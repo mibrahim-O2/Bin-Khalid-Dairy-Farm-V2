@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,7 @@ import {
 import { voidCustomerPayment } from "../../actions";
 
 export function VoidPaymentDialog({ paymentId }: { paymentId: string }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,6 +38,7 @@ export function VoidPaymentDialog({ paymentId }: { paymentId: string }) {
       return;
     }
     setOpen(false);
+    router.refresh();
   }
 
   return (
