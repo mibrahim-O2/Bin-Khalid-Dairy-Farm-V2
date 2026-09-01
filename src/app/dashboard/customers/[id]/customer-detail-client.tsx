@@ -1,62 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { ArrowLeft } from "lucide-react";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Customer } from "@/types/customer";
+import type { Customer, CustomerRate, Product } from "@/types/customer";
 import { formatAmount } from "@/lib/format-number";
 import { CustomerFormDialog } from "../customer-form-dialog";
+import { setCustomerActive } from "../crud-actions";
 import { RateManager } from "./rate-manager";
 import { OpeningBalanceCard } from "./opening-balance-card";
 import { BillsList } from "./bills-list";
 import { RecordPaymentDialog } from "./record-payment-dialog";
 import { DeleteCustomerDialog } from "./delete-customer-dialog";
 
-export function CustomerDetailClient({ isOwner }: { isOwner: boolean }) {
-  const params = useParams<{ id: string }>();
-  const customerId = params.id;
-  // Wait for the Firebase client SDK's own auth state (separate from the
-  // server session cookie) before subscribing — otherwise this can lose a
-  // race against auth rehydration on a fresh page load and fail with
-  // permission-denied.
-  const { user } = useCurrentUser();
-  const [customer, setCustomer] = useState<Customer | null | undefined>(undefined);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    return onSnapshot(
-      doc(db, "customers", customerId),
-      (snap) => {
-        setCustomer(snap.exists() ? ({ id: snap.id, ...snap.data() } as Customer) : null);
-      },
-      () => setLoadError("Failed to load this customer. Try refreshing the page.")
-    );
-  }, [customerId, user]);
+export function CustomerDetailClient({
+  isOwner,
+  customer,
+  products,
+  rates,
+}: {
+  isOwner: boolean;
+  customer: Customer | null;
+  products: Product[];
+  rates: CustomerRate[];
+}) {
+  const router = useRouter();
+  const [toggling, setToggling] = useState(false);
 
   async function toggleActive() {
     if (!customer) return;
-    const db = getFirebaseDb();
-    await updateDoc(doc(db, "customers", customer.id), {
-      active: !customer.active,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  if (loadError) {
-    return <p className="text-destructive">{loadError}</p>;
-  }
-
-  if (customer === undefined) {
-    return <p className="text-muted-foreground">Loading…</p>;
+    setToggling(true);
+    await setCustomerActive({ customerId: customer.id, active: !customer.active });
+    setToggling(false);
+    router.refresh();
   }
 
   if (customer === null) {
@@ -95,7 +75,7 @@ export function CustomerDetailClient({ isOwner }: { isOwner: boolean }) {
                 </Button>
               }
             />
-            <Button variant="outline" size="sm" onClick={toggleActive}>
+            <Button variant="outline" size="sm" disabled={toggling} onClick={toggleActive}>
               {customer.active ? "Archive" : "Unarchive"}
             </Button>
             {isOwner ? (
@@ -157,7 +137,7 @@ export function CustomerDetailClient({ isOwner }: { isOwner: boolean }) {
           <CardTitle>Product rates</CardTitle>
         </CardHeader>
         <CardContent>
-          <RateManager customerId={customer.id} />
+          <RateManager customerId={customer.id} products={products} rates={rates} />
         </CardContent>
       </Card>
     </div>

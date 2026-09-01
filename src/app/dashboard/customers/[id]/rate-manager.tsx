@@ -1,17 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  runTransaction,
-  where,
-} from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
-import { useCurrentUser } from "@/hooks/use-current-user";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { CustomerRate, Product } from "@/types/customer";
+import { setCustomerRate } from "./rate-actions";
 
 function RateEditDialog({
   customerId,
@@ -43,7 +34,7 @@ function RateEditDialog({
   product: Product;
   currentRate: number | null;
 }) {
-  const { user } = useCurrentUser();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [rate, setRate] = useState(String(currentRate ?? product.defaultRate));
   const [saving, setSaving] = useState(false);
@@ -63,44 +54,17 @@ function RateEditDialog({
       setError("Enter a valid non-negative rate.");
       return;
     }
-    if (!user) {
-      setError("Still loading your session — try again in a moment.");
-      return;
-    }
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const rateRef = doc(db, "customerRates", `${customerId}_${product.id}`);
-      const now = new Date().toISOString();
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(rateRef);
-        if (snap.exists()) {
-          // Move the outgoing rate into history before overwriting it —
-          // rate changes are historized, never silently overwritten.
-          const previous = snap.data();
-          const historyRef = doc(collection(rateRef, "history"));
-          tx.set(historyRef, {
-            rate: previous.rate,
-            supersededAt: now,
-            updatedBy: previous.updatedBy ?? null,
-          });
-        }
-        tx.set(rateRef, {
-          customerId,
-          productId: product.id,
-          rate: newRate,
-          updatedAt: now,
-          updatedBy: user.uid,
-        });
-      });
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
-      setSaving(false);
+    const result = await setCustomerRate({ customerId, productId: product.id, rate: newRate });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
@@ -138,55 +102,17 @@ function RateEditDialog({
   );
 }
 
-export function RateManager({ customerId }: { customerId: string }) {
-  // Wait for the Firebase client SDK's own auth state — otherwise these can
-  // lose a race against auth rehydration on a fresh page load and fail with
-  // permission-denied (and silently leave rates empty, so bills would fall
-  // back to a product's default rate instead of this customer's real one).
-  const { user } = useCurrentUser();
-  const [products, setProducts] = useState<Product[] | null>(null);
-  const [rates, setRates] = useState<Record<string, CustomerRate>>({});
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const db = getFirebaseDb();
-    const productsQuery = query(
-      collection(db, "products"),
-      where("active", "==", true),
-      orderBy("name")
-    );
-    const unsubProducts = onSnapshot(
-      productsQuery,
-      (snapshot) => {
-        setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Product));
-      },
-      () => setError("Failed to load products. Try refreshing the page.")
-    );
-
-    const ratesQuery = query(collection(db, "customerRates"), where("customerId", "==", customerId));
-    const unsubRates = onSnapshot(
-      ratesQuery,
-      (snapshot) => {
-        const next: Record<string, CustomerRate> = {};
-        for (const d of snapshot.docs) {
-          const rate = { id: d.id, ...d.data() } as CustomerRate;
-          next[rate.productId] = rate;
-        }
-        setRates(next);
-      },
-      () => setError("Failed to load customer rates. Try refreshing the page.")
-    );
-
-    return () => {
-      unsubProducts();
-      unsubRates();
-    };
-  }, [customerId, user]);
-
-  if (error) {
-    return <p className="text-sm text-destructive">{error}</p>;
-  }
+export function RateManager({
+  customerId,
+  products,
+  rates,
+}: {
+  customerId: string;
+  products: Product[];
+  rates: CustomerRate[];
+}) {
+  const ratesByProductId: Record<string, CustomerRate> = {};
+  for (const rate of rates) ratesByProductId[rate.productId] = rate;
 
   return (
     <div className="overflow-x-auto">
@@ -200,13 +126,7 @@ export function RateManager({ customerId }: { customerId: string }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products === null ? (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground">
-                Loading…
-              </TableCell>
-            </TableRow>
-          ) : products.length === 0 ? (
+          {products.length === 0 ? (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
                 No active products yet — add some on the Products page first.
@@ -214,7 +134,7 @@ export function RateManager({ customerId }: { customerId: string }) {
             </TableRow>
           ) : (
             products.map((product) => {
-              const rate = rates[product.id];
+              const rate = ratesByProductId[product.id];
               return (
                 <TableRow key={product.id}>
                   <TableCell className="font-medium text-foreground">{product.name}</TableCell>
