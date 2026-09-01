@@ -1,8 +1,11 @@
 "use server";
 
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
+import { getDb } from "@/lib/db/client";
+import { suppliers } from "@/lib/db/schema";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
 
@@ -45,11 +48,13 @@ export async function generateSupplierStatement(input: {
   const db = getAdminDb();
 
   try {
-    const supplierSnap = await db.collection("suppliers").doc(supplierId).get();
-    if (!supplierSnap.exists) {
+    // Suppliers moved to Postgres in M6 — read the name from there, not the
+    // Firestore doc (which stops being written to for new suppliers).
+    const [supplierRow] = await getDb().select().from(suppliers).where(eq(suppliers.id, supplierId));
+    if (!supplierRow) {
       return { ok: false, error: "Supplier not found." };
     }
-    const supplier = supplierSnap.data() as { name: string };
+    const supplier = { name: supplierRow.name };
 
     const allTransactionsSnap = await db
       .collection("supplierLedgerTransactions")
