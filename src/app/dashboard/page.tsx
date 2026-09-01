@@ -1,9 +1,8 @@
 import { Users, Truck, HandCoins } from "lucide-react";
 import { count } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getAdminDb } from "@/lib/firebase/admin";
 import { getDb } from "@/lib/db/client";
-import { customers, suppliers } from "@/lib/db/schema";
+import { customers, employees, suppliers } from "@/lib/db/schema";
 
 type Counts =
   | { ok: true; customers: number; suppliers: number; employees: number }
@@ -11,24 +10,23 @@ type Counts =
 
 async function getCounts(): Promise<Counts> {
   try {
-    // Customers (M2) and suppliers (M6) live in Postgres now; employees
-    // haven't migrated yet (M10) so still counted from Firestore.
-    const pgDb = getDb();
-    const fsDb = getAdminDb();
-    const [[customerCount], [supplierCount], employees] = await Promise.all([
-      pgDb.select({ value: count() }).from(customers),
-      pgDb.select({ value: count() }).from(suppliers),
-      fsDb.collection("employees").count().get(),
+    // Customers (M2), suppliers (M6), and employees (M10) all live in
+    // Postgres now.
+    const db = getDb();
+    const [[customerCount], [supplierCount], [employeeCount]] = await Promise.all([
+      db.select({ value: count() }).from(customers),
+      db.select({ value: count() }).from(suppliers),
+      db.select({ value: count() }).from(employees),
     ]);
     return {
       ok: true,
       customers: customerCount.value,
       suppliers: supplierCount.value,
-      employees: employees.data().count,
+      employees: employeeCount.value,
     };
   } catch {
-    // No Firebase/Postgres configured yet, or a transient error — the
-    // dashboard shell should still render, just without live numbers.
+    // No Postgres configured yet, or a transient error — the dashboard
+    // shell should still render, just without live numbers.
     return { ok: false };
   }
 }
@@ -52,7 +50,7 @@ export default async function DashboardPage() {
       {!counts.ok ? (
         <Card className="border-warning/40 bg-warning/5">
           <CardContent className="pt-6 text-sm">
-            <p className="font-medium text-foreground">Firebase isn&apos;t configured yet.</p>
+            <p className="font-medium text-foreground">Database isn&apos;t configured yet.</p>
             <p className="mt-1 text-muted-foreground">
               Fill in <code>.env.local</code> from <code>.env.local.example</code> to see live
               counts here.
