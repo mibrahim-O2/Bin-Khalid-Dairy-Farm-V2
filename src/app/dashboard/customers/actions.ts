@@ -2,9 +2,39 @@
 
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
+import { eq, sql } from "drizzle-orm";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
+import { getDb } from "@/lib/db/client";
+import { customers } from "@/lib/db/schema";
+
+/**
+ * TRANSITIONAL dual-write, removed once M5 finishes migrating this file to
+ * Postgres. `customers.balance`/`hasOpeningBalance` are cached fields
+ * derived from the ledger — Firestore stays authoritative for them until
+ * the ledger itself (bills/payments) migrates, but the Postgres `customers`
+ * row (source of truth for name/phone/address since M2) needs the same
+ * cached balance kept current too, or the migrated customer list/detail
+ * pages would show a stale number the moment any bill or payment fires.
+ * Best-effort: logged, not thrown, if it fails — the Firestore write above
+ * is what actually matters financially; a stale cached number in Postgres
+ * self-corrects on the next successful financial action.
+ */
+async function syncPostgresBalance(customerId: string, delta: number, extra?: { hasOpeningBalance: true }) {
+  try {
+    await getDb()
+      .update(customers)
+      .set({
+        balance: sql`${customers.balance} + ${delta}`,
+        updatedAt: new Date(),
+        ...(extra ? { hasOpeningBalance: true } : {}),
+      })
+      .where(eq(customers.id, customerId));
+  } catch (err) {
+    console.error(`[transitional] Failed to sync Postgres balance for customer ${customerId}:`, err);
+  }
+}
 
 const openingBalanceSchema = z.object({
   customerId: z.string().min(1),
@@ -45,6 +75,7 @@ export async function setCustomerOpeningBalance(input: {
   const db = getAdminDb();
   const customerRef = db.collection("customers").doc(customerId);
   const ledgerRef = db.collection("customerLedgerTransactions").doc();
+  const delta = direction === "debit" ? amount : -amount;
 
   try {
     await db.runTransaction(async (tx) => {
@@ -56,7 +87,6 @@ export async function setCustomerOpeningBalance(input: {
         throw new Error("Opening balance already recorded for this customer.");
       }
 
-      const delta = direction === "debit" ? amount : -amount;
       const now = new Date().toISOString();
 
       tx.set(ledgerRef, {
@@ -77,6 +107,7 @@ export async function setCustomerOpeningBalance(input: {
         updatedAt: now,
       });
     });
+    await syncPostgresBalance(customerId, delta, { hasOpeningBalance: true });
     return { ok: true };
   } catch (err) {
     return {
@@ -201,6 +232,7 @@ export async function recordCustomerPayment(input: {
         remaining = Math.round((remaining - allocation) * 100) / 100;
       }
     });
+    await syncPostgresBalance(customerId, -amount);
     return { ok: true };
   } catch (err) {
     return {
@@ -242,7 +274,7 @@ export async function voidCustomerPayment(input: {
   const paymentRef = db.collection("payments").doc(paymentId);
 
   try {
-    await db.runTransaction(async (tx) => {
+    const payment = await db.runTransaction(async (tx) => {
       const paymentSnap = await tx.get(paymentRef);
       if (!paymentSnap.exists) {
         throw new Error("Payment not found.");
@@ -294,7 +326,10 @@ export async function voidCustomerPayment(input: {
         voidedBy: { uid: session.uid, email: session.email },
         voidReason: reason,
       });
+
+      return payment;
     });
+    await syncPostgresBalance(payment.customerId, payment.amount);
     return { ok: true };
   } catch (err) {
     return {
@@ -426,6 +461,20 @@ export async function deleteCustomer(input: {
       finalBatch.delete(customerRef);
       finalBatch.set(logRef, logData);
       await finalBatch.commit();
+    }
+
+    // TRANSITIONAL — the Postgres customers row (source of truth for
+    // name/phone/address since M2) needs to disappear too, or it'd become
+    // a "ghost" customer: visible in the migrated customer list with a
+    // name and balance, but every one of its Firestore-side records
+    // (bills, payments, ledger, rates) already gone. Best-effort: the
+    // Firestore purge above is what actually matters — a leftover
+    // Postgres row is a cosmetic, manually-fixable loose end, not a
+    // financial-integrity one, so this never fails the action itself.
+    try {
+      await getDb().delete(customers).where(eq(customers.id, customerId));
+    } catch (err) {
+      console.error(`[transitional] Failed to delete Postgres customer row ${customerId}:`, err);
     }
 
     return { ok: true };
