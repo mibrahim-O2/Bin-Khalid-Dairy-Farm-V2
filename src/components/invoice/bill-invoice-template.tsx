@@ -5,6 +5,7 @@ import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { Bill } from "@/types/bill";
 import type { Customer } from "@/types/customer";
+import { BilingualLabel as Label } from "./bilingual-label";
 
 /**
  * A bilingual (English + Urdu) invoice for a finalized customer bill,
@@ -19,16 +20,6 @@ import type { Customer } from "@/types/customer";
  * data (customer name, product names, notes) is whatever was actually
  * entered and isn't machine-translated.
  */
-function Label({ en, ur }: { en: string; ur: string }) {
-  return (
-    <span className="flex flex-col leading-tight">
-      <span>{en}</span>
-      <span dir="rtl" className={`${notoNastaliqUrdu.className} text-[13px] text-neutral-500`}>
-        {ur}
-      </span>
-    </span>
-  );
-}
 
 export function BillInvoiceTemplate({ bill, customer }: { bill: Bill; customer: Customer }) {
   return (
