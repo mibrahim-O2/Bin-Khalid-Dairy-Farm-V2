@@ -1,9 +1,12 @@
 "use server";
 
 import { z } from "zod";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
+import { getDb } from "@/lib/db/client";
+import { users } from "@/lib/db/schema";
+import { logActivity } from "@/lib/db/activity-log";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -46,21 +49,44 @@ export async function approvePendingUser(input: { uid: string }): Promise<Action
       role: "admin",
     });
 
-    // Mirror onto /users/{uid} for reference — writes here go through this
-    // Server Action only (Firestore rules deny direct client writes).
-    await getAdminDb()
-      .doc(`users/${uid}`)
-      .set(
-        {
+    // Mirror onto the Postgres `users` table for reference — never read for
+    // authorization (that's always the session cookie's custom claims,
+    // above); writes here go through this Server Action only (every table
+    // denies direct client access at the RLS level regardless).
+    const now = new Date();
+    await getDb()
+      .insert(users)
+      .values({
+        uid,
+        email: userRecord.email ?? null,
+        displayName: userRecord.displayName ?? null,
+        active: true,
+        role: "admin",
+        approvedAt: now,
+        approvedByUid: session.uid,
+        approvedByEmail: session.email,
+      })
+      .onConflictDoUpdate({
+        target: users.uid,
+        set: {
           email: userRecord.email ?? null,
           displayName: userRecord.displayName ?? null,
           active: true,
           role: "admin",
-          approvedAt: new Date().toISOString(),
-          approvedBy: { uid: session.uid, email: session.email },
+          approvedAt: now,
+          approvedByUid: session.uid,
+          approvedByEmail: session.email,
         },
-        { merge: true }
-      );
+      });
+
+    await logActivity({
+      action: "user_approved",
+      targetType: "user",
+      targetId: uid,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { approvedEmail: userRecord.email ?? null },
+    });
 
     return { ok: true };
   } catch {
