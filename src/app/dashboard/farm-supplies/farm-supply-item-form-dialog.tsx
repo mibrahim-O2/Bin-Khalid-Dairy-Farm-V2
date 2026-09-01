@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase/client";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { FarmSupplyItem } from "@/types/supplier";
+import { createFarmSupplyItem, updateFarmSupplyItem } from "./actions";
 
 type FarmSupplyItemFormDialogProps = {
   item?: FarmSupplyItem;
@@ -23,6 +23,7 @@ type FarmSupplyItemFormDialogProps = {
 };
 
 export function FarmSupplyItemFormDialog({ item, trigger }: FarmSupplyItemFormDialogProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(item?.name ?? "");
   const [unit, setUnit] = useState(item?.unit ?? "");
@@ -49,32 +50,16 @@ export function FarmSupplyItemFormDialog({ item, trigger }: FarmSupplyItemFormDi
 
     setSaving(true);
     setError(null);
-    try {
-      const db = getFirebaseDb();
-      const now = new Date().toISOString();
-      if (item) {
-        await updateDoc(doc(db, "farmSupplyItems", item.id), {
-          name: name.trim(),
-          unit: unit.trim(),
-          defaultRate: rate,
-          updatedAt: now,
-        });
-      } else {
-        await addDoc(collection(db, "farmSupplyItems"), {
-          name: name.trim(),
-          unit: unit.trim(),
-          defaultRate: rate,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      setOpen(false);
-    } catch {
-      setError("Failed to save. Check your connection and try again.");
-    } finally {
-      setSaving(false);
+    const result = item
+      ? await updateFarmSupplyItem({ itemId: item.id, name, unit, defaultRate: rate })
+      : await createFarmSupplyItem({ name, unit, defaultRate: rate });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
     }
+    setOpen(false);
+    router.refresh();
   }
 
   return (
