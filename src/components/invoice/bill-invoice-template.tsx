@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { notoNastaliqUrdu } from "@/lib/fonts";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { Bill } from "@/types/bill";
@@ -7,18 +6,21 @@ import type { Customer } from "@/types/customer";
 import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
 import { BilingualLabel as Label } from "./bilingual-label";
 
+const BRAND_GREEN = "#1B4332";
+
 /**
- * A bilingual (English + Urdu) invoice for a finalized customer bill,
- * rendered as a fixed-width, print/share-ready document — deliberately
- * plain white/black regardless of the app's own theme, matching how a
- * printed or WhatsApp-shared receipt actually looks. Rendered off-screen
- * and rasterized to a PNG by ShareImageButton (src/components/invoice/
- * share-image-button.tsx); never shown as part of the normal dashboard UI.
+ * A print/share-ready invoice for a finalized customer bill, rendered
+ * off-screen and rasterized to a PNG by ShareImageButton (src/components/
+ * invoice/share-image-button.tsx) — deliberately plain white/black
+ * regardless of the app's own theme, matching how a printed or
+ * WhatsApp-shared receipt actually looks. Never shown as part of the
+ * normal dashboard UI.
  *
- * Bilingual scope, per DESIGN.md: static labels/headings are shown in both
- * languages (English above, Urdu below in Nastaliq/RTL) — the underlying
- * data (customer name, product names, notes) is whatever was actually
- * entered and isn't machine-translated.
+ * Bilingual scope (redesigned): the logo art already spells out the farm
+ * name, so the header carries no duplicate name text at all. Everywhere
+ * else on the document is English-only — the Milk Calculation section is
+ * the ONE bilingual section left, because it's the part a customer is most
+ * likely to want explained in Urdu.
  *
  * businessInfo/paymentSettings/invoiceSettings come from the Settings
  * module (Phase 9, src/lib/db/settings.ts) — always fetched fresh by the
@@ -38,70 +40,67 @@ export function BillInvoiceTemplate({
   paymentSettings: PaymentSettings;
   invoiceSettings: InvoiceSettings;
 }) {
+  const milkLines = bill.lineItems.filter((line) => line.billingType === "milk");
+
   return (
     <div
       className="flex w-[720px] flex-col gap-6 bg-white p-10 text-neutral-900"
       style={{ fontFamily: "Manrope, Arial, sans-serif" }}
     >
-      <div className="flex items-start justify-between border-b border-neutral-200 pb-6">
-        <div className="flex items-center gap-3">
-          <Image
-            src="/logoDairy.png"
-            alt="Bin Khalid Dairy Farm"
-            width={1254}
-            height={1254}
-            className="size-14 shrink-0 object-contain"
-          />
-          <div>
-            <p className="text-xl font-bold">{businessInfo.name}</p>
-            <p dir="rtl" className={`${notoNastaliqUrdu.className} text-base text-neutral-600`}>
-              {businessInfo.nameUrdu}
-            </p>
-            {businessInfo.phone ? <p className="mt-1 text-xs text-neutral-500">{businessInfo.phone}</p> : null}
-            {businessInfo.address ? <p className="text-xs text-neutral-500">{businessInfo.address}</p> : null}
-          </div>
+      {/* Logo-led header — the logo art already spells out the farm name, so
+          no plain-text name is duplicated next to it. */}
+      <div className="flex flex-col items-center gap-1 border-b border-neutral-200 pb-6 text-center">
+        <Image
+          src="/logoDairy.png"
+          alt="Bin Khalid Dairy Farm"
+          width={1254}
+          height={1254}
+          className="size-28 shrink-0 object-contain"
+        />
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-xs text-neutral-500">
+          {businessInfo.phone ? <span>{businessInfo.phone}</span> : null}
+          {businessInfo.phone && businessInfo.address ? <span className="text-neutral-300">•</span> : null}
+          {businessInfo.address ? <span>{businessInfo.address}</span> : null}
         </div>
-        <div className="text-right">
-          <Label en="Invoice" ur="رسید" />
-          <p className="mt-1 font-mono text-lg font-bold">{bill.billNumber}</p>
-        </div>
+        <p className="text-sm font-semibold italic" style={{ color: BRAND_GREEN }}>
+          Pure Milk, Pure Life
+        </p>
       </div>
 
-      <div className="flex justify-between text-sm">
-        <div>
-          <Label en="Billed to" ur="بل موصول کنندہ" />
-          <p className="mt-1 text-base font-semibold">{customer.name}</p>
+      <div className="flex items-start justify-between gap-6 text-sm">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs uppercase tracking-wide text-neutral-400">Billed to</p>
+          <p className="mt-1 break-words text-base font-semibold leading-snug">{customer.name}</p>
           {customer.phone ? <p className="text-neutral-500">{customer.phone}</p> : null}
         </div>
-        <div className="text-right">
-          <Label en="Period" ur="مدت" />
-          <p className="mt-1">
+        <div className="shrink-0 text-right">
+          <p className="text-xs uppercase tracking-wide text-neutral-400">Invoice</p>
+          <p className="mt-1 font-mono text-lg font-bold">{bill.billNumber}</p>
+          <p className="mt-1 text-neutral-500">
             {formatDate(bill.startDate)} – {formatDate(bill.endDate)}
           </p>
         </div>
       </div>
 
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-[40%]" />
+          <col className="w-[20%]" />
+          <col className="w-[18%]" />
+          <col className="w-[22%]" />
+        </colgroup>
         <thead>
           <tr className="border-b-2 border-neutral-900 text-left">
-            <th className="py-2 font-normal">
-              <Label en="Product" ur="پروڈکٹ" />
-            </th>
-            <th className="py-2 text-right font-normal">
-              <Label en="Rate" ur="ریٹ" />
-            </th>
-            <th className="py-2 text-right font-normal">
-              <Label en="Quantity" ur="مقدار" />
-            </th>
-            <th className="py-2 text-right font-normal">
-              <Label en="Amount" ur="رقم" />
-            </th>
+            <th className="py-2 font-normal">Product</th>
+            <th className="py-2 text-right font-normal">Rate</th>
+            <th className="py-2 text-right font-normal">Quantity</th>
+            <th className="py-2 text-right font-normal">Amount</th>
           </tr>
         </thead>
         <tbody>
           {bill.lineItems.map((line, index) => (
-            <tr key={`${line.productId}-${index}`} className="border-b border-neutral-100">
-              <td className="py-2">
+            <tr key={`${line.productId}-${index}`} className="border-b border-neutral-100 align-top">
+              <td className="py-2 break-words">
                 {line.productName}
                 <span className="ml-1 text-xs text-neutral-500">/{line.unit}</span>
               </td>
@@ -113,25 +112,92 @@ export function BillInvoiceTemplate({
         </tbody>
       </table>
 
-      <div className="flex flex-col gap-1.5 self-end text-sm sm:w-64">
-        <div className="flex justify-between">
-          <Label en="Subtotal" ur="ذیلی رقم" />
+      {milkLines.length > 0 ? (
+        <div
+          className="flex flex-col gap-3 rounded-md border border-neutral-200 p-4"
+          style={{ backgroundColor: "rgba(27, 67, 50, 0.04)" }}
+        >
+          <Label en="Milk Calculation" ur="دودھ کا حساب" />
+          {milkLines.map((line) => (
+            <table key={line.productId} className="w-full text-sm">
+              {milkLines.length > 1 ? (
+                <caption className="mb-1 text-left text-xs font-medium text-neutral-500">
+                  {line.productName}
+                </caption>
+              ) : null}
+              <tbody>
+                <tr className="border-b border-neutral-200/70">
+                  <td className="py-1.5">
+                    <Label en="Billing Period" ur="مدت بلنگ" />
+                  </td>
+                  <td className="py-1.5 text-right font-medium">{bill.days} days</td>
+                </tr>
+                <tr className="border-b border-neutral-200/70">
+                  <td className="py-1.5">
+                    <Label en="Rate per KG" ur="فی کلو ریٹ" />
+                  </td>
+                  <td className="py-1.5 text-right font-medium">{formatAmount(line.rate)}</td>
+                </tr>
+                <tr className="border-b border-neutral-200/70">
+                  <td className="py-1.5">
+                    <Label en="Daily Milk" ur="یومیہ دودھ" />
+                  </td>
+                  <td className="py-1.5 text-right font-medium">
+                    {line.dailyQty ?? 0} {line.unit}
+                  </td>
+                </tr>
+                <tr className="border-b border-neutral-200/70">
+                  <td className="py-1.5">
+                    <Label en="Extra Milk Added" ur="اضافی دودھ" />
+                  </td>
+                  <td className="py-1.5 text-right font-medium">
+                    {line.extra ?? 0} {line.unit}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1.5">
+                    <Label en="Milk Deducted" ur="کم شدہ دودھ" />
+                  </td>
+                  <td className="py-1.5 text-right font-medium">
+                    {line.less ?? 0} {line.unit}
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={2} className="pt-2">
+                    <div
+                      className="flex items-center justify-between rounded-sm px-3 py-2"
+                      style={{ backgroundColor: "rgba(27, 67, 50, 0.1)" }}
+                    >
+                      <Label en="Total Milk" ur="کل دودھ" />
+                      <span className="text-base font-bold" style={{ color: BRAND_GREEN }}>
+                        {line.totalQty} {line.unit}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1.5 self-end text-sm sm:w-72">
+        <div className="flex justify-between gap-4">
+          <span className="text-neutral-500">Subtotal</span>
           <span className="font-medium">{formatAmount(bill.subtotal)}</span>
         </div>
         {bill.previousBalance !== null ? (
-          <div className="flex justify-between">
-            <Label en="Previous balance" ur="گزشتہ بقایہ" />
+          <div className="flex justify-between gap-4">
+            <span className="text-neutral-500">Previous balance</span>
             <span className="font-medium">{formatAmount(bill.previousBalance)}</span>
           </div>
         ) : null}
-        <div className="flex justify-between border-t border-neutral-300 pt-1.5 text-base">
-          <Label en="Total payable" ur="کل ادائیگی" />
-          <span className="font-bold">
-            {formatAmount(bill.totalPayable ?? bill.subtotal)}
-          </span>
+        <div className="flex justify-between gap-4 border-t border-neutral-300 pt-1.5 text-base">
+          <span className="font-medium">Total payable</span>
+          <span className="font-bold">{formatAmount(bill.totalPayable ?? bill.subtotal)}</span>
         </div>
-        <div className="flex justify-between text-emerald-700">
-          <Label en="Amount paid" ur="ادا شدہ رقم" />
+        <div className="flex justify-between gap-4 text-emerald-700">
+          <span>Amount paid</span>
           <span className="font-medium">{formatAmount(bill.amountPaid)}</span>
         </div>
       </div>
@@ -139,9 +205,9 @@ export function BillInvoiceTemplate({
       {bill.note ? <p className="border-t border-neutral-200 pt-4 text-sm text-neutral-600">{bill.note}</p> : null}
 
       {paymentSettings.accounts.length > 0 ? (
-        <div className="border-t border-neutral-200 pt-4">
-          <Label en="Payment accounts" ur="ادائیگی کے اکاؤنٹس" />
-          <div className="mt-2 flex flex-col gap-1 text-sm">
+        <div className="border-t border-neutral-200 pt-4 text-sm">
+          <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">Payment accounts</p>
+          <div className="flex flex-col gap-1">
             {paymentSettings.accounts.map((account) => (
               <p key={account.id}>
                 <span className="text-neutral-500">{account.label}: </span>
@@ -152,15 +218,8 @@ export function BillInvoiceTemplate({
         </div>
       ) : null}
 
-      <p className="border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
-        {invoiceSettings.footerNote ? (
-          <span>{invoiceSettings.footerNote}</span>
-        ) : (
-          <span>Thank you for your business — </span>
-        )}
-        <span dir="rtl" className={notoNastaliqUrdu.className}>
-          {invoiceSettings.footerNoteUrdu ?? "شکریہ"}
-        </span>
+      <p className="border-t border-neutral-200 pt-4 text-center text-sm font-medium" style={{ color: BRAND_GREEN }}>
+        {invoiceSettings.footerNote || "Thank you for choosing Bin Khalid Dairy Farm"}
       </p>
     </div>
   );

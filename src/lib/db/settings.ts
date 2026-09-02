@@ -12,7 +12,7 @@ const DEFAULT_BUSINESS: BusinessSettings = {
   name: "Bin Khalid Dairy Farm",
   nameUrdu: "بن خالد ڈیری فارم",
   phone: null,
-  address: null,
+  address: "Shahdadpur, Sindh",
 };
 
 const DEFAULT_PAYMENTS: PaymentSettings = { accounts: [] };
