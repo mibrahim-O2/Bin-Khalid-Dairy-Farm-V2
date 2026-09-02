@@ -26,7 +26,7 @@ const approveSchema = z.object({
  */
 export async function approvePendingUser(input: { uid: string }): Promise<ActionResult> {
   const session = await getServerSession();
-  if (!session) {
+  if (!session || !session.active) {
     return { ok: false, error: "Not authorized." };
   }
   if (!isOwnerSession(session)) {
