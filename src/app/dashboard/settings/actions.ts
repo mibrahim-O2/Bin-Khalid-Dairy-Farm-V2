@@ -50,6 +50,11 @@ export async function updateBusinessSettings(input: z.infer<typeof businessSchem
       session.uid
     );
     revalidatePath("/dashboard/settings");
+    // The landing page reads business name/phone/address too (WhatsApp CTA,
+    // contact line) and is statically generated for speed — bust that cache
+    // so an edit here shows up on the next visit instead of waiting for a
+    // redeploy.
+    revalidatePath("/");
     return { ok: true };
   } catch {
     return { ok: false, error: "Failed to save. Check your connection and try again." };
