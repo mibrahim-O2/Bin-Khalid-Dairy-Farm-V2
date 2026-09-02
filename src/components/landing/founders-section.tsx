@@ -39,11 +39,11 @@ export function FoundersSection() {
             />
           </div>
           <div>
-            <p className="font-heading text-xl font-bold text-foreground sm:text-2xl">Muhammad Khalid Yaseen</p>
+            <p className="font-heading text-xl font-bold text-foreground sm:text-2xl">Mr & Mrs Muhammad Khalid Yaseen</p>
             <p className="text-sm text-muted-foreground">Founder, Bin Khalid Dairy Farm</p>
           </div>
           <p className="max-w-2xl text-base leading-relaxed text-foreground/90 sm:text-lg">
-            For Muhammad Khalid Yaseen, a glass of milk was never just a product — it was a promise.
+            For Muhammad Khalid Yaseen, a glass of milk was never just a product it was a promise.
             Long before it became a business, it was a habit passed down through generations: give
             people what you would give your own family, nothing less, nothing hidden. That belief is
             the actual foundation Bin Khalid Dairy Farm stands on today — purity in what leaves the
@@ -77,7 +77,7 @@ export function FoundersSection() {
       <ScrollReveal delayMs={240}>
         <div className="flex flex-col gap-4 text-center">
           <p className="text-base leading-relaxed text-foreground/90 sm:text-lg">
-            Muhammad Khalid Yaseen carried forward a legacy that began with his own parents — a life
+            Muhammad Khalid Yaseen carried forward a legacy that began with his own parents a life
             built on the land, on livestock raised with care, and on a name that was worth more than
             any contract. He founded Bin Khalid Dairy Farm not to start something new, but to
             continue something old: a family&apos;s word being its bond.
@@ -86,7 +86,7 @@ export function FoundersSection() {
             Today, that legacy continues through his sons —{" "}
             <span className="font-semibold text-foreground">Muhammad Ibrahim</span>,{" "}
             <span className="font-semibold text-foreground">Muhammad Faisal</span>, and{" "}
-            <span className="font-semibold text-foreground">Muhammad Ismail</span> — who carry
+            <span className="font-semibold text-foreground">Muhammad Ismail</span> who carry
             forward what their father and grandparents built before them: the same farm, the same
             milk, and the same principle that has never changed.
           </p>
