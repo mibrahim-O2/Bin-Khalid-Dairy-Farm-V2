@@ -78,7 +78,7 @@ export default async function Home() {
             <ScrollReveal delayMs={160}>
               <p className="max-w-lg text-base text-muted-foreground sm:text-lg">
                 Bin Khalid Dairy Farm has served Shahdadpur with pure milk and honest
-                dealing for generations — now backed by a management system that keeps
+                dealing for generations now backed by a management system that keeps
                 every account just as transparent.
               </p>
             </ScrollReveal>
@@ -138,7 +138,7 @@ export default async function Home() {
               </span>
               <h2 className="font-heading text-3xl font-bold text-foreground sm:text-4xl">Our Products</h2>
               <p className="max-w-md text-sm text-muted-foreground sm:text-base">
-                Fresh, pure, and delivered daily — everything the farm produces.
+                Fresh, pure, and delivered daily everything the farm produces.
               </p>
             </div>
           </ScrollReveal>
