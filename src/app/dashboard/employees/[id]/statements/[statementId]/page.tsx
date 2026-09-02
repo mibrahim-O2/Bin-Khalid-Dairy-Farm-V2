@@ -18,6 +18,7 @@ import {
 import type { EmployeeLedgerTransaction } from "@/types/employee";
 import { ShareImageButton } from "@/components/invoice/share-image-button";
 import { EmployeeStatementTemplate } from "@/components/invoice/employee-statement-template";
+import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 
 const typeLabels: Record<EmployeeLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -35,6 +36,7 @@ export default async function EmployeeStatementPage({
   const { id: employeeId, statementId } = await params;
   const [row] = await getDb().select().from(employeeStatements).where(eq(employeeStatements.id, statementId));
   const statement = row ? toEmployeeStatement(row) : null;
+  const [businessInfo, invoiceSettings] = await Promise.all([getBusinessSettings(), getInvoiceSettings()]);
 
   if (statement === null) {
     return (
@@ -69,7 +71,7 @@ export default async function EmployeeStatementPage({
           shareTitle={`Statement — ${statement.employeeName}`}
           shareText={`${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}`}
         >
-          <EmployeeStatementTemplate statement={statement} />
+          <EmployeeStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
         </ShareImageButton>
       </div>
 

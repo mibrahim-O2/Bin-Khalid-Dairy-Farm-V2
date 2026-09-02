@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { getBillPaymentStatus, type Bill, type BillLineItem, type BillPaymentStatus, type BillStatus } from "@/types/bill";
 import type { Customer, CustomerRate, Product } from "@/types/customer";
+import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
 import { finalizeBill, updateDraftBill } from "../actions";
 import { VoidBillDialog } from "./void-bill-dialog";
 import { ShareImageButton } from "@/components/invoice/share-image-button";
@@ -61,12 +62,18 @@ export function BillEditorClient({
   customer,
   products,
   rates,
+  businessInfo,
+  paymentSettings,
+  invoiceSettings,
 }: {
   customerId: string;
   bill: Bill | null;
   customer: Customer | null;
   products: Product[];
   rates: CustomerRate[];
+  businessInfo: BusinessSettings;
+  paymentSettings: PaymentSettings;
+  invoiceSettings: InvoiceSettings;
 }) {
   const router = useRouter();
   const ratesByProductId = useMemo(() => {
@@ -539,7 +546,13 @@ export function BillEditorClient({
               shareTitle={`Bill ${bill.billNumber ?? ""}`}
               shareText={`${customer.name} — ${formatAmount(bill.totalPayable ?? bill.subtotal)}`}
             >
-              <BillInvoiceTemplate bill={bill} customer={customer} />
+              <BillInvoiceTemplate
+                bill={bill}
+                customer={customer}
+                businessInfo={businessInfo}
+                paymentSettings={paymentSettings}
+                invoiceSettings={invoiceSettings}
+              />
             </ShareImageButton>
           </>
         ) : null}

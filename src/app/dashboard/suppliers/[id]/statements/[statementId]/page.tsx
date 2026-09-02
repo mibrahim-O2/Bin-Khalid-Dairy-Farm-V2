@@ -18,6 +18,7 @@ import {
 import type { SupplierLedgerTransaction } from "@/types/supplier";
 import { ShareImageButton } from "@/components/invoice/share-image-button";
 import { SupplierStatementTemplate } from "@/components/invoice/supplier-statement-template";
+import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 
 const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -35,6 +36,7 @@ export default async function SupplierStatementPage({
   const { id: supplierId, statementId } = await params;
   const [row] = await getDb().select().from(supplierStatements).where(eq(supplierStatements.id, statementId));
   const statement = row ? toSupplierStatement(row) : null;
+  const [businessInfo, invoiceSettings] = await Promise.all([getBusinessSettings(), getInvoiceSettings()]);
 
   if (statement === null) {
     return (
@@ -69,7 +71,7 @@ export default async function SupplierStatementPage({
           shareTitle={`Statement — ${statement.supplierName}`}
           shareText={`${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}`}
         >
-          <SupplierStatementTemplate statement={statement} />
+          <SupplierStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
         </ShareImageButton>
       </div>
 

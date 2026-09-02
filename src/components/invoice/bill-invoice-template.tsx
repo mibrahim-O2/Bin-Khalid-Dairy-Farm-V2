@@ -1,10 +1,10 @@
 import Image from "next/image";
 import { notoNastaliqUrdu } from "@/lib/fonts";
-import { businessInfo } from "@/lib/business-info";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { Bill } from "@/types/bill";
 import type { Customer } from "@/types/customer";
+import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
 import { BilingualLabel as Label } from "./bilingual-label";
 
 /**
@@ -19,9 +19,25 @@ import { BilingualLabel as Label } from "./bilingual-label";
  * languages (English above, Urdu below in Nastaliq/RTL) — the underlying
  * data (customer name, product names, notes) is whatever was actually
  * entered and isn't machine-translated.
+ *
+ * businessInfo/paymentSettings/invoiceSettings come from the Settings
+ * module (Phase 9, src/lib/db/settings.ts) — always fetched fresh by the
+ * calling page/Server Action and passed down, never imported as a static
+ * constant here, so an edit in Settings shows up on the very next share.
  */
-
-export function BillInvoiceTemplate({ bill, customer }: { bill: Bill; customer: Customer }) {
+export function BillInvoiceTemplate({
+  bill,
+  customer,
+  businessInfo,
+  paymentSettings,
+  invoiceSettings,
+}: {
+  bill: Bill;
+  customer: Customer;
+  businessInfo: BusinessSettings;
+  paymentSettings: PaymentSettings;
+  invoiceSettings: InvoiceSettings;
+}) {
   return (
     <div
       className="flex w-[720px] flex-col gap-6 bg-white p-10 text-neutral-900"
@@ -122,10 +138,28 @@ export function BillInvoiceTemplate({ bill, customer }: { bill: Bill; customer: 
 
       {bill.note ? <p className="border-t border-neutral-200 pt-4 text-sm text-neutral-600">{bill.note}</p> : null}
 
+      {paymentSettings.accounts.length > 0 ? (
+        <div className="border-t border-neutral-200 pt-4">
+          <Label en="Payment accounts" ur="ادائیگی کے اکاؤنٹس" />
+          <div className="mt-2 flex flex-col gap-1 text-sm">
+            {paymentSettings.accounts.map((account) => (
+              <p key={account.id}>
+                <span className="text-neutral-500">{account.label}: </span>
+                <span className="font-medium">{account.accountNumber}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <p className="border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
-        <span>Thank you for your business — </span>
+        {invoiceSettings.footerNote ? (
+          <span>{invoiceSettings.footerNote}</span>
+        ) : (
+          <span>Thank you for your business — </span>
+        )}
         <span dir="rtl" className={notoNastaliqUrdu.className}>
-          شکریہ
+          {invoiceSettings.footerNoteUrdu ?? "شکریہ"}
         </span>
       </p>
     </div>

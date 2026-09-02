@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { billLineItems, bills, customerRates, customers, products } from "@/lib/db/schema";
 import { toBill, toCustomer, toCustomerRate, toProduct } from "@/lib/db/mappers";
+import { getBusinessSettings, getInvoiceSettings, getPaymentSettings } from "@/lib/db/settings";
 import { BillEditorClient } from "./bill-editor-client";
 
 export default async function BillDetailPage({
@@ -12,12 +13,16 @@ export default async function BillDetailPage({
   const { id: customerId, billId } = await params;
   const db = getDb();
 
-  const [[billRow], [customerRow], productRows, rateRows] = await Promise.all([
-    db.select().from(bills).where(eq(bills.id, billId)),
-    db.select().from(customers).where(eq(customers.id, customerId)),
-    db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.name)),
-    db.select().from(customerRates).where(eq(customerRates.customerId, customerId)),
-  ]);
+  const [[billRow], [customerRow], productRows, rateRows, businessInfo, paymentSettings, invoiceSettings] =
+    await Promise.all([
+      db.select().from(bills).where(eq(bills.id, billId)),
+      db.select().from(customers).where(eq(customers.id, customerId)),
+      db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.name)),
+      db.select().from(customerRates).where(eq(customerRates.customerId, customerId)),
+      getBusinessSettings(),
+      getPaymentSettings(),
+      getInvoiceSettings(),
+    ]);
 
   const lineItemRows = billRow
     ? await db
@@ -34,6 +39,9 @@ export default async function BillDetailPage({
       customer={customerRow ? toCustomer(customerRow) : null}
       products={productRows.map(toProduct)}
       rates={rateRows.map(toCustomerRate)}
+      businessInfo={businessInfo}
+      paymentSettings={paymentSettings}
+      invoiceSettings={invoiceSettings}
     />
   );
 }

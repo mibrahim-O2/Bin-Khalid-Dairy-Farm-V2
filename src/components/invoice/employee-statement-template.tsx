@@ -1,10 +1,10 @@
 import Image from "next/image";
 import { notoNastaliqUrdu } from "@/lib/fonts";
-import { businessInfo } from "@/lib/business-info";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { EmployeeLedgerTransaction } from "@/types/employee";
 import type { EmployeeStatement } from "@/types/employee-statement";
+import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
 import { BilingualLabel as Label } from "./bilingual-label";
 
 const typeLabels: Record<EmployeeLedgerTransaction["type"], { en: string; ur: string }> = {
@@ -22,7 +22,15 @@ const typeLabels: Record<EmployeeLedgerTransaction["type"], { en: string; ur: st
  * (credit = salary accrued, debit = advance/payment taken) so the display
  * logic here (debit column vs credit column) needs no special-casing.
  */
-export function EmployeeStatementTemplate({ statement }: { statement: EmployeeStatement }) {
+export function EmployeeStatementTemplate({
+  statement,
+  businessInfo,
+  invoiceSettings,
+}: {
+  statement: EmployeeStatement;
+  businessInfo: BusinessSettings;
+  invoiceSettings: InvoiceSettings;
+}) {
   return (
     <div
       className="flex w-[720px] flex-col gap-6 bg-white p-10 text-neutral-900"
@@ -116,9 +124,13 @@ export function EmployeeStatementTemplate({ statement }: { statement: EmployeeSt
       </div>
 
       <p className="border-t border-neutral-200 pt-4 text-center text-xs text-neutral-400">
-        <span>Thank you for your business — </span>
+        {invoiceSettings.footerNote ? (
+          <span>{invoiceSettings.footerNote}</span>
+        ) : (
+          <span>Thank you for your business — </span>
+        )}
         <span dir="rtl" className={notoNastaliqUrdu.className}>
-          شکریہ
+          {invoiceSettings.footerNoteUrdu ?? "شکریہ"}
         </span>
       </p>
     </div>
