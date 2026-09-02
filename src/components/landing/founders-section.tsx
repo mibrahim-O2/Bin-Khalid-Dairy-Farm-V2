@@ -1,4 +1,4 @@
-import { User } from "lucide-react";
+import Image from "next/image";
 import { notoNastaliqUrdu, notoNaskhArabic } from "@/lib/fonts";
 import { ScrollReveal } from "@/components/scroll-reveal";
 
@@ -10,7 +10,9 @@ const GOLD = "#C9A227";
  * Copy is fixed, approved text (see the chat thread this was drafted in),
  * not meant to be edited casually: the founder message, the ayat and its
  * translations, and the legacy narrative were all reviewed and signed off
- * on before this component was written.
+ * on before this component was written. Portrait is public/founder.png,
+ * cropped to its top (object-top) so the face sits well inside the circle
+ * despite the source photo being a tall portrait, not a pre-cropped square.
  */
 export function FoundersSection() {
   return (
@@ -26,9 +28,15 @@ export function FoundersSection() {
 
       <ScrollReveal delayMs={80}>
         <div className="flex flex-col items-center gap-4 text-center">
-          {/* Photo placeholder — swap for a real <Image> once one is provided. */}
-          <div className="flex size-28 items-center justify-center rounded-full border-2 border-primary/20 bg-accent text-primary sm:size-32">
-            <User className="size-12 sm:size-14" strokeWidth={1.5} />
+          <div className="relative size-28 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 sm:size-32">
+            <Image
+              src="/founder.png"
+              alt="Muhammad Khalid Yaseen"
+              fill
+              sizes="128px"
+              className="object-cover object-top"
+              priority
+            />
           </div>
           <div>
             <p className="font-heading text-xl font-bold text-foreground sm:text-2xl">Muhammad Khalid Yaseen</p>
