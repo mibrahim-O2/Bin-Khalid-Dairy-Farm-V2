@@ -3,10 +3,30 @@ import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { Bill } from "@/types/bill";
 import type { Customer } from "@/types/customer";
-import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
+import type { BusinessSettings, InvoiceSettings, PaymentAccount, PaymentSettings } from "@/types/settings";
 import { BilingualLabel as Label } from "./bilingual-label";
 
 const BRAND_GREEN = "#1B4332";
+
+/**
+ * Two Settings-configured accounts (e.g. Easypaisa and JazzCash) often
+ * share the same physical mobile number — showing that number twice under
+ * two separate labels reads as a mistake, not two real options. Groups by
+ * accountNumber and joins the labels that share one with " / ", in
+ * first-seen order.
+ */
+function mergeAccountsBySharedNumber(accounts: PaymentAccount[]): { label: string; accountNumber: string }[] {
+  const labelsByNumber = new Map<string, string[]>();
+  for (const account of accounts) {
+    const labels = labelsByNumber.get(account.accountNumber) ?? [];
+    labels.push(account.label);
+    labelsByNumber.set(account.accountNumber, labels);
+  }
+  return Array.from(labelsByNumber.entries()).map(([accountNumber, labels]) => ({
+    accountNumber,
+    label: labels.join(" / "),
+  }));
+}
 
 /**
  * A print/share-ready invoice for a finalized customer bill, rendered
@@ -41,6 +61,8 @@ export function BillInvoiceTemplate({
   invoiceSettings: InvoiceSettings;
 }) {
   const milkLines = bill.lineItems.filter((line) => line.billingType === "milk");
+  const otherLines = bill.lineItems.filter((line) => line.billingType !== "milk");
+  const mergedAccounts = mergeAccountsBySharedNumber(paymentSettings.accounts);
 
   return (
     <div
@@ -81,36 +103,6 @@ export function BillInvoiceTemplate({
           </p>
         </div>
       </div>
-
-      <table className="w-full table-fixed text-sm">
-        <colgroup>
-          <col className="w-[40%]" />
-          <col className="w-[20%]" />
-          <col className="w-[18%]" />
-          <col className="w-[22%]" />
-        </colgroup>
-        <thead>
-          <tr className="border-b-2 border-neutral-900 text-left">
-            <th className="py-2 font-normal">Product</th>
-            <th className="py-2 text-right font-normal">Rate</th>
-            <th className="py-2 text-right font-normal">Quantity</th>
-            <th className="py-2 text-right font-normal">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {bill.lineItems.map((line, index) => (
-            <tr key={`${line.productId}-${index}`} className="border-b border-neutral-100 align-top">
-              <td className="py-2 break-words">
-                {line.productName}
-                <span className="ml-1 text-xs text-neutral-500">/{line.unit}</span>
-              </td>
-              <td className="py-2 text-right">{formatAmount(line.rate)}</td>
-              <td className="py-2 text-right">{line.totalQty}</td>
-              <td className="py-2 text-right font-medium">{formatAmount(line.lineTotal)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
 
       {milkLines.length > 0 ? (
         <div
@@ -181,44 +173,69 @@ export function BillInvoiceTemplate({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1.5 self-end text-sm sm:w-72">
-        <div className="flex justify-between gap-4">
-          <span className="text-neutral-500">Subtotal</span>
-          <span className="font-medium">{formatAmount(bill.subtotal)}</span>
-        </div>
-        {bill.previousBalance !== null ? (
-          <div className="flex justify-between gap-4">
-            <span className="text-neutral-500">Previous balance</span>
-            <span className="font-medium">{formatAmount(bill.previousBalance)}</span>
-          </div>
-        ) : null}
-        <div className="flex justify-between gap-4 border-t border-neutral-300 pt-1.5 text-base">
-          <span className="font-medium">Total payable</span>
-          <span className="font-bold">{formatAmount(bill.totalPayable ?? bill.subtotal)}</span>
-        </div>
-        <div className="flex justify-between gap-4 text-emerald-700">
-          <span>Amount paid</span>
-          <span className="font-medium">{formatAmount(bill.amountPaid)}</span>
-        </div>
-      </div>
-
-      {bill.note ? <p className="border-t border-neutral-200 pt-4 text-sm text-neutral-600">{bill.note}</p> : null}
-
-      {paymentSettings.accounts.length > 0 ? (
-        <div className="border-t border-neutral-200 pt-4 text-sm">
-          <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">Payment accounts</p>
-          <div className="flex flex-col gap-1">
-            {paymentSettings.accounts.map((account) => (
-              <p key={account.id}>
-                <span className="text-neutral-500">{account.label}: </span>
-                <span className="font-medium">{account.accountNumber}</span>
-              </p>
-            ))}
-          </div>
+      {/* Non-milk items (e.g. Ghee, Makhan, Dahi) — a simple name/qty/amount
+          list, not the full table: their rate is already implied by the
+          amount, and repeating the table headers here for what's often a
+          single extra line would outweigh the information it carries. */}
+      {otherLines.length > 0 ? (
+        <div className="flex flex-col gap-1.5 text-sm">
+          <p className="text-xs uppercase tracking-wide text-neutral-400">Items</p>
+          {otherLines.map((line, index) => (
+            <div key={`${line.productId}-${index}`} className="flex items-baseline justify-between gap-4">
+              <span className="min-w-0 break-words">
+                {line.productName}
+                <span className="ml-1 text-xs text-neutral-500">
+                  — {line.totalQty} {line.unit}
+                </span>
+              </span>
+              <span className="shrink-0 font-medium">{formatAmount(line.lineTotal)}</span>
+            </div>
+          ))}
         </div>
       ) : null}
 
-      <p className="border-t border-neutral-200 pt-4 text-center text-sm font-medium" style={{ color: BRAND_GREEN }}>
+      {bill.note ? <p className="text-sm text-neutral-600">{bill.note}</p> : null}
+
+      {/* Payment accounts (left) / totals block (right) share one row. */}
+      <div className="flex items-start justify-between gap-6 border-t border-neutral-200 pt-4 text-sm">
+        <div className="min-w-0 flex-1">
+          {mergedAccounts.length > 0 ? (
+            <>
+              <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">Payment accounts</p>
+              <div className="flex flex-col gap-1">
+                {mergedAccounts.map((account) => (
+                  <p key={account.accountNumber}>
+                    <span className="text-neutral-500">{account.label}: </span>
+                    <span className="font-medium">{account.accountNumber}</span>
+                  </p>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col gap-1.5 sm:w-72">
+          <div className="flex justify-between gap-4">
+            <span className="text-neutral-500">Subtotal</span>
+            <span className="font-medium">{formatAmount(bill.subtotal)}</span>
+          </div>
+          {bill.previousBalance !== null ? (
+            <div className="flex justify-between gap-4">
+              <span className="text-neutral-500">Previous balance</span>
+              <span className="font-medium">{formatAmount(bill.previousBalance)}</span>
+            </div>
+          ) : null}
+          <div className="flex justify-between gap-4 border-t border-neutral-300 pt-1.5 text-base">
+            <span className="font-medium">Total payable</span>
+            <span className="font-bold">{formatAmount(bill.totalPayable ?? bill.subtotal)}</span>
+          </div>
+          <div className="flex justify-between gap-4 text-emerald-700">
+            <span>Amount paid</span>
+            <span className="font-medium">{formatAmount(bill.amountPaid)}</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-sm font-medium" style={{ color: BRAND_GREEN }}>
         {invoiceSettings.footerNote || "Thank you for choosing Bin Khalid Dairy Farm"}
       </p>
     </div>
