@@ -41,6 +41,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local database backups (scripts/backup-database.mjs) — contains real
+# customer/financial data, never commit
+/backups
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
