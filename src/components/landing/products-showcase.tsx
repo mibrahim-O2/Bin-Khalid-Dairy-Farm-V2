@@ -13,11 +13,11 @@ const PRODUCTS = [
 
 export function ProductsShowcase() {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
       {PRODUCTS.map((product, index) => (
         <ScrollReveal key={product.key} delayMs={index * 60}>
-          <div className="group flex flex-col items-center gap-3 rounded-3xl border border-border bg-card p-5 text-center shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30 hover:shadow-lg sm:p-6">
-            <div className="relative flex h-24 w-24 items-center justify-center sm:h-32 sm:w-32">
+          <div className="group flex flex-col items-center gap-2 rounded-3xl border border-border bg-card p-4 text-center shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30 hover:shadow-lg sm:p-5">
+            <div className="relative flex h-32 w-32 items-center justify-center sm:h-44 sm:w-44 lg:h-48 lg:w-48">
               <Image
                 src={product.image}
                 alt={product.name}

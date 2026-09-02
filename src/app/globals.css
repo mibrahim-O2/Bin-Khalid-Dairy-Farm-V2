@@ -148,3 +148,40 @@
     @apply font-sans;
   }
 }
+
+/* Landing page hero logo — a one-time fade/scale entrance followed by a
+   slow, continuous "breathing" float. Plain CSS (no JS animation library),
+   per the landing page's mobile-performance requirement. Disabled for
+   prefers-reduced-motion visitors, where the logo just renders in place. */
+@keyframes hero-logo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hero-logo-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.hero-logo {
+  animation:
+    hero-logo-in 900ms ease-out both,
+    hero-logo-float 6s ease-in-out 900ms infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo {
+    animation: none;
+  }
+}

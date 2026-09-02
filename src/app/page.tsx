@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { MessageCircle, Receipt, Truck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,7 @@ import { Wordmark } from "@/components/wordmark";
 import { DevCredit } from "@/components/dev-credit";
 import { ScrollReveal } from "@/components/scroll-reveal";
 import { ProductsShowcase } from "@/components/landing/products-showcase";
+import { FoundersSection } from "@/components/landing/founders-section";
 import { getBusinessSettings } from "@/lib/db/settings";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
@@ -59,37 +61,51 @@ export default async function Home() {
       </header>
 
       <main className="flex-1">
-        {/* Hero */}
-        <section className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 py-16 text-center sm:px-6 sm:py-28">
-          <ScrollReveal>
-            <span className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-medium tracking-wide text-muted-foreground">
-              {businessInfo.address ?? "Shahdadpur, Sindh"}
-            </span>
-          </ScrollReveal>
-          <ScrollReveal delayMs={80}>
-            <h1 className="max-w-2xl font-heading text-4xl font-bold leading-tight text-foreground sm:text-5xl">
-              Running the farm&apos;s books, the honest way.
-            </h1>
-          </ScrollReveal>
-          <ScrollReveal delayMs={160}>
-            <p className="max-w-xl text-lg text-muted-foreground">
-              Bin Khalid Dairy Farm&apos;s management system — customer billing,
-              supplier purchases, and staff salaries, each kept in a clear,
-              accurate ledger.
-            </p>
-          </ScrollReveal>
-          <ScrollReveal delayMs={240}>
-            <div className="flex flex-col items-center gap-3 sm:flex-row">
-              {whatsappLink ? (
-                <Button size="lg" render={<a href={whatsappLink} target="_blank" rel="noopener noreferrer" />}>
-                  <MessageCircle /> Chat on WhatsApp
+        {/* Hero — text on the left, a large animated logo on the right (DOM
+            order keeps text first so it stacks above the logo on mobile). */}
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-2 lg:gap-16 lg:py-16">
+          <div className="flex flex-col items-center gap-5 text-center lg:items-start lg:text-left">
+            <ScrollReveal>
+              <span className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-medium tracking-wide text-muted-foreground">
+                {businessInfo.address ?? "Shahdadpur, Sindh"}
+              </span>
+            </ScrollReveal>
+            <ScrollReveal delayMs={80}>
+              <h1 className="max-w-xl font-heading text-4xl font-bold leading-tight text-foreground sm:text-5xl">
+                Trusted by Generations. Delivered Fresh Daily.
+              </h1>
+            </ScrollReveal>
+            <ScrollReveal delayMs={160}>
+              <p className="max-w-lg text-base text-muted-foreground sm:text-lg">
+                Bin Khalid Dairy Farm has served Shahdadpur with pure milk and honest
+                dealing for generations — now backed by a management system that keeps
+                every account just as transparent.
+              </p>
+            </ScrollReveal>
+            <ScrollReveal delayMs={240}>
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                {whatsappLink ? (
+                  <Button size="lg" render={<a href={whatsappLink} target="_blank" rel="noopener noreferrer" />}>
+                    <MessageCircle /> Chat on WhatsApp
+                  </Button>
+                ) : null}
+                <Button size="lg" variant={whatsappLink ? "outline" : "default"} render={<Link href="/login" />}>
+                  Sign in to Dashboard
                 </Button>
-              ) : null}
-              <Button size="lg" variant={whatsappLink ? "outline" : "default"} render={<Link href="/login" />}>
-                Sign in to the dashboard
-              </Button>
-            </div>
-          </ScrollReveal>
+              </div>
+            </ScrollReveal>
+          </div>
+
+          <div className="flex justify-center lg:justify-end">
+            <Image
+              src="/logoDairy.png"
+              alt="Bin Khalid Dairy Farm"
+              width={1254}
+              height={1254}
+              priority
+              className="hero-logo size-56 object-contain sm:size-72 lg:size-80"
+            />
+          </div>
         </section>
 
         {/* Overview */}
@@ -116,7 +132,7 @@ export default async function Home() {
         {/* Products */}
         <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6 sm:pb-28">
           <ScrollReveal>
-            <div className="mb-8 flex flex-col items-center gap-2 text-center sm:mb-12">
+            <div className="mb-6 flex flex-col items-center gap-1.5 text-center sm:mb-8">
               <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#C9A227" }}>
                 From the farm
               </span>
@@ -128,6 +144,8 @@ export default async function Home() {
           </ScrollReveal>
           <ProductsShowcase />
         </section>
+
+        <FoundersSection />
       </main>
 
       <footer className="border-t border-border">
