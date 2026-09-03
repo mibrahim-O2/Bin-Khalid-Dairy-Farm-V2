@@ -22,6 +22,13 @@
       "when": 1788458455025,
       "tag": "0002_typical_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788460730006,
+      "tag": "0003_dusty_maelstrom",
+      "breakpoints": true
     }
   ]
 }

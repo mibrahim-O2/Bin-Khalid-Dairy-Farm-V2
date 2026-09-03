@@ -19,6 +19,7 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 const employeeInputSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().trim().max(50).optional(),
+  whatsappNumber: z.string().trim().max(50).optional(),
   address: z.string().trim().max(500).optional(),
 });
 
@@ -34,7 +35,7 @@ export async function createEmployee(
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { name, phone, address } = parsed.data;
+  const { name, phone, whatsappNumber, address } = parsed.data;
 
   const id = randomUUID();
   try {
@@ -44,6 +45,7 @@ export async function createEmployee(
         id,
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         active: true,
         balance: "0",
@@ -71,7 +73,7 @@ export async function updateEmployee(input: z.infer<typeof updateEmployeeSchema>
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { employeeId, name, phone, address } = parsed.data;
+  const { employeeId, name, phone, whatsappNumber, address } = parsed.data;
 
   try {
     await getDb()
@@ -79,6 +81,7 @@ export async function updateEmployee(input: z.infer<typeof updateEmployeeSchema>
       .set({
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         updatedAt: new Date(),
       })

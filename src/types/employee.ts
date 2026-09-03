@@ -2,6 +2,8 @@ export type Employee = {
   id: string;
   name: string;
   phone: string | null;
+  /** Often a different number than `phone` — used for the "Send via WhatsApp" statement-share button. */
+  whatsappNumber: string | null;
   address: string | null;
   /** Soft-delete flag. Employees are archived, never hard-deleted. */
   active: boolean;

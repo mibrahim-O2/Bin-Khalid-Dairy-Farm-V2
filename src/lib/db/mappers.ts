@@ -182,6 +182,7 @@ export function toEmployee(row: typeof employees.$inferSelect): Employee {
     id: row.id,
     name: row.name,
     phone: row.phone,
+    whatsappNumber: row.whatsappNumber,
     address: row.address,
     active: row.active,
     balance: toNumber(row.balance),
