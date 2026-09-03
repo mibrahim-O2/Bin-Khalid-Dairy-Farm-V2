@@ -45,6 +45,7 @@ export function EmployeeStatementTemplate({
           alt="Bin Khalid Dairy Farm"
           width={1254}
           height={1254}
+          priority
           className="size-28 shrink-0 object-contain"
         />
         <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-xs text-neutral-500">
