@@ -5,6 +5,7 @@ import type {
   billLineItems,
   bills,
   customerLedgerTransactions,
+  customerMilkPauses,
   customerRates,
   customers,
   employeeLedgerTransactions,
@@ -20,7 +21,7 @@ import type {
   supplierStatements,
   suppliers,
 } from "./schema";
-import type { Customer, CustomerLedgerTransaction, CustomerRate, Product } from "@/types/customer";
+import type { Customer, CustomerLedgerTransaction, CustomerMilkPause, CustomerRate, Product } from "@/types/customer";
 import type { Bill, BillLineItem } from "@/types/bill";
 import type { FarmSupplyItem, Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase, PurchaseLineItem } from "@/types/purchase";
@@ -42,11 +43,24 @@ export function toCustomer(row: typeof customers.$inferSelect): Customer {
     phone: row.phone,
     whatsappNumber: row.whatsappNumber,
     address: row.address,
+    joiningDate: row.joiningDate,
     active: row.active,
     balance: toNumber(row.balance),
     hasOpeningBalance: row.hasOpeningBalance,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+  };
+}
+
+export function toCustomerMilkPause(row: typeof customerMilkPauses.$inferSelect): CustomerMilkPause {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    pauseDate: row.pauseDate,
+    resumeDate: row.resumeDate,
+    dailyMilkQtyAtPause: row.dailyMilkQtyAtPause !== null ? toNumber(row.dailyMilkQtyAtPause) : null,
+    createdAt: row.createdAt.toISOString(),
     createdBy: row.createdByUid ?? "",
   };
 }

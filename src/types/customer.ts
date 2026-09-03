@@ -9,6 +9,8 @@ export type Customer = {
   /** Often a different number than `phone` — used for the "Send via WhatsApp" bill-share button. */
   whatsappNumber: string | null;
   address: string | null;
+  /** Set once at creation, never edited afterward — see the Milk Record module. yyyy-mm-dd. */
+  joiningDate: string | null;
   /** Soft-delete flag. Customers are archived, never hard-deleted. */
   active: boolean;
   /** Cached Σdebits − Σcredits. Only ever written inside the same server-side
@@ -17,6 +19,24 @@ export type Customer = {
   hasOpeningBalance: boolean;
   createdAt: string;
   updatedAt: string;
+  createdBy: string;
+};
+
+/**
+ * One pause/resume period in a customer's milk delivery history — the
+ * Milk Record module. Informational/tracking only; never read by billing,
+ * ledger, or balance logic. `dailyMilkQtyAtPause` is a snapshot taken when
+ * the pause was recorded (see schema/customers.ts's doc comment) — use it
+ * for this pause's own Milk Missed figure, not the customer's current
+ * daily quantity, which can have changed since.
+ */
+export type CustomerMilkPause = {
+  id: string;
+  customerId: string;
+  pauseDate: string; // yyyy-mm-dd
+  resumeDate: string | null; // yyyy-mm-dd — null while still paused
+  dailyMilkQtyAtPause: number | null;
+  createdAt: string;
   createdBy: string;
 };
 

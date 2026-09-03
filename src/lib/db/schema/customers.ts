@@ -1,4 +1,4 @@
-import { boolean, index, numeric, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, index, numeric, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { productBillingTypeEnum } from "./enums";
 
 export const customers = pgTable("customers", {
@@ -21,6 +21,12 @@ export const customers = pgTable("customers", {
   // not showing that button when unset (see BillEditorClient).
   whatsappNumber: text("whatsapp_number"),
   address: text("address"),
+  // Set once at creation (createCustomer defaults it to today), never
+  // edited afterward — see the Milk Record module
+  // (src/app/dashboard/milk-record). Nullable only because existing rows
+  // predate this column; migration 0004 backfills every one of them from
+  // `created_at` at the time it was added.
+  joiningDate: date("joining_date"),
   // Soft-delete flag. Customers are archived, never hard-deleted (the
   // Owner-only full-purge delete is a separate, deliberate exception — see
   // the M5 delete-customer Server Action, not this flag).
@@ -87,3 +93,31 @@ export const customerRateHistory = pgTable("customer_rate_history", {
   supersededAt: timestamp("superseded_at", { withTimezone: true }).notNull(),
   updatedByUid: text("updated_by_uid"),
 }, (t) => [index("ix_customer_rate_history_rate").on(t.customerRateId)]).enableRLS();
+
+/**
+ * One row per pause/resume period for a customer's milk delivery — the
+ * Milk Record module (src/app/dashboard/milk-record). Purely
+ * informational/tracking: never read by any billing, ledger, or balance
+ * calculation. Supports the customer's full history, not just the latest
+ * period — a customer can have many rows here over time.
+ *
+ * `dailyMilkQtyAtPause` is a SNAPSHOT taken when the pause is recorded
+ * (sourced from the customer's most recent finalized milk bill line item
+ * at that moment), not a live lookup — matching this app's snapshot-
+ * everywhere convention (bill line items, customer rate history, ...) so
+ * a later change to the customer's billed quantity never retroactively
+ * changes what a past pause's "Milk Missed" figure was calculated from.
+ */
+export const customerMilkPauses = pgTable("customer_milk_pauses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: text("customer_id")
+    .notNull()
+    .references(() => customers.id, { onDelete: "cascade" }),
+  pauseDate: date("pause_date").notNull(),
+  // Null while the customer is still paused — filled in once they restart.
+  resumeDate: date("resume_date"),
+  dailyMilkQtyAtPause: numeric("daily_milk_qty_at_pause", { precision: 12, scale: 2 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdByUid: text("created_by_uid"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("ix_customer_milk_pauses_customer").on(t.customerId)]).enableRLS();

@@ -48,6 +48,10 @@ export async function createCustomer(
         phone: phone || null,
         whatsappNumber: whatsappNumber || null,
         address: address || null,
+        // Set once, here, at creation — never edited afterward (see the
+        // Milk Record module). Today's date in the server's local
+        // calendar day, not a timestamp.
+        joiningDate: new Date().toISOString().slice(0, 10),
         active: true,
         balance: "0",
         hasOpeningBalance: false,

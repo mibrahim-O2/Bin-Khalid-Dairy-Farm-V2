@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
   UserCheck,
+  Milk,
 } from "lucide-react";
 
 export type NavItem = {
@@ -22,6 +23,7 @@ export type NavItem = {
 export const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/customers", label: "Customers", icon: Users },
+  { href: "/dashboard/milk-record", label: "Milk Record", icon: Milk },
   { href: "/dashboard/products", label: "Products", icon: Package },
   { href: "/dashboard/suppliers", label: "Suppliers", icon: Truck },
   { href: "/dashboard/farm-supplies", label: "Farm Supplies", icon: Wheat },
