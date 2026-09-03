@@ -2,6 +2,8 @@ export type Supplier = {
   id: string;
   name: string;
   phone: string | null;
+  /** Often a different number than `phone` — used for the "Send via WhatsApp" statement-share button. */
+  whatsappNumber: string | null;
   address: string | null;
   /** Soft-delete flag. Suppliers are archived, never hard-deleted (unlike
    *  customers, which got an explicit Owner-only exception — not extended

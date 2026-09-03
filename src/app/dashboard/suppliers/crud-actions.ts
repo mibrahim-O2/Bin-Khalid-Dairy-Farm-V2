@@ -18,6 +18,7 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 const supplierInputSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().trim().max(50).optional(),
+  whatsappNumber: z.string().trim().max(50).optional(),
   address: z.string().trim().max(500).optional(),
 });
 
@@ -33,7 +34,7 @@ export async function createSupplier(
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { name, phone, address } = parsed.data;
+  const { name, phone, whatsappNumber, address } = parsed.data;
 
   const id = randomUUID();
   try {
@@ -43,6 +44,7 @@ export async function createSupplier(
         id,
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         active: true,
         balance: "0",
@@ -70,7 +72,7 @@ export async function updateSupplier(input: z.infer<typeof updateSupplierSchema>
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { supplierId, name, phone, address } = parsed.data;
+  const { supplierId, name, phone, whatsappNumber, address } = parsed.data;
 
   try {
     await getDb()
@@ -78,6 +80,7 @@ export async function updateSupplier(input: z.infer<typeof updateSupplierSchema>
       .set({
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         updatedAt: new Date(),
       })

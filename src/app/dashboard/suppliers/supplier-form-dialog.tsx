@@ -29,6 +29,7 @@ export function SupplierFormDialog({ supplier, trigger, onCreated }: SupplierFor
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(supplier?.name ?? "");
   const [phone, setPhone] = useState(supplier?.phone ?? "");
+  const [whatsappNumber, setWhatsappNumber] = useState(supplier?.whatsappNumber ?? "");
   const [address, setAddress] = useState(supplier?.address ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +38,7 @@ export function SupplierFormDialog({ supplier, trigger, onCreated }: SupplierFor
     if (open) {
       setName(supplier?.name ?? "");
       setPhone(supplier?.phone ?? "");
+      setWhatsappNumber(supplier?.whatsappNumber ?? "");
       setAddress(supplier?.address ?? "");
       setError(null);
     }
@@ -52,14 +54,14 @@ export function SupplierFormDialog({ supplier, trigger, onCreated }: SupplierFor
     setSaving(true);
     setError(null);
     if (supplier) {
-      const result = await updateSupplier({ supplierId: supplier.id, name, phone, address });
+      const result = await updateSupplier({ supplierId: supplier.id, name, phone, whatsappNumber, address });
       setSaving(false);
       if (!result.ok) {
         setError(result.error);
         return;
       }
     } else {
-      const result = await createSupplier({ name, phone, address });
+      const result = await createSupplier({ name, phone, whatsappNumber, address });
       setSaving(false);
       if (!result.ok) {
         setError(result.error);
@@ -95,6 +97,16 @@ export function SupplierFormDialog({ supplier, trigger, onCreated }: SupplierFor
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="supplier-whatsapp">WhatsApp number</Label>
+            <Input
+              id="supplier-whatsapp"
+              type="tel"
+              placeholder="Leave blank if same as phone"
+              value={whatsappNumber}
+              onChange={(e) => setWhatsappNumber(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-2">

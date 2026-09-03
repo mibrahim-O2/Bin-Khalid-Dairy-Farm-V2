@@ -15,6 +15,11 @@ export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone"),
+  // Separate from `phone` — a customer's WhatsApp number is often a
+  // different number than the one they answer calls on. Used to build the
+  // wa.me link on the "Send via WhatsApp" bill-share button; falls back to
+  // not showing that button when unset (see BillEditorClient).
+  whatsappNumber: text("whatsapp_number"),
   address: text("address"),
   // Soft-delete flag. Customers are archived, never hard-deleted (the
   // Owner-only full-purge delete is a separate, deliberate exception — see

@@ -20,6 +20,7 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 const customerInputSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().trim().max(50).optional(),
+  whatsappNumber: z.string().trim().max(50).optional(),
   address: z.string().trim().max(500).optional(),
 });
 
@@ -35,7 +36,7 @@ export async function createCustomer(
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { name, phone, address } = parsed.data;
+  const { name, phone, whatsappNumber, address } = parsed.data;
 
   const id = randomUUID();
   try {
@@ -45,6 +46,7 @@ export async function createCustomer(
         id,
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         active: true,
         balance: "0",
@@ -72,7 +74,7 @@ export async function updateCustomer(input: z.infer<typeof updateCustomerSchema>
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { customerId, name, phone, address } = parsed.data;
+  const { customerId, name, phone, whatsappNumber, address } = parsed.data;
 
   try {
     await getDb()
@@ -80,6 +82,7 @@ export async function updateCustomer(input: z.infer<typeof updateCustomerSchema>
       .set({
         name,
         phone: phone || null,
+        whatsappNumber: whatsappNumber || null,
         address: address || null,
         updatedAt: new Date(),
       })

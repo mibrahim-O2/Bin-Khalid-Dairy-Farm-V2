@@ -15,6 +15,13 @@
       "when": 1788222480972,
       "tag": "0001_friendly_moondragon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788458455025,
+      "tag": "0002_typical_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }

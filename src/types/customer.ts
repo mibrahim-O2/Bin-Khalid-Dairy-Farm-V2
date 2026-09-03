@@ -6,6 +6,8 @@ export type Customer = {
   id: string;
   name: string;
   phone: string | null;
+  /** Often a different number than `phone` — used for the "Send via WhatsApp" bill-share button. */
+  whatsappNumber: string | null;
   address: string | null;
   /** Soft-delete flag. Customers are archived, never hard-deleted. */
   active: boolean;

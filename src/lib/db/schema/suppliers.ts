@@ -8,6 +8,10 @@ export const suppliers = pgTable("suppliers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone"),
+  // Separate from `phone` — see the identical field on customers
+  // (schema/customers.ts) for why. Used for the statement-share
+  // "Send via WhatsApp" button.
+  whatsappNumber: text("whatsapp_number"),
   address: text("address"),
   // Soft-delete flag. Suppliers are archived, never hard-deleted (unlike
   // customers, which got an explicit Owner-only exception — not extended
