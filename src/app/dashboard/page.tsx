@@ -1,77 +1,118 @@
-import { Users, Truck, HandCoins } from "lucide-react";
-import { count } from "drizzle-orm";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getDb } from "@/lib/db/client";
-import { customers, employees, suppliers } from "@/lib/db/schema";
+import { Users, Truck, HandCoins, Milk, ShoppingCart, Wallet, Landmark, ArrowDownToLine } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { getDashboardStats } from "@/lib/db/dashboard-stats";
+import { formatAmount } from "@/lib/format-number";
+import { StatCard } from "./stat-card";
 
-type Counts =
-  | { ok: true; customers: number; suppliers: number; employees: number }
-  | { ok: false };
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
-async function getCounts(): Promise<Counts> {
-  try {
-    // Customers (M2), suppliers (M6), and employees (M10) all live in
-    // Postgres now.
-    const db = getDb();
-    const [[customerCount], [supplierCount], [employeeCount]] = await Promise.all([
-      db.select({ value: count() }).from(customers),
-      db.select({ value: count() }).from(suppliers),
-      db.select({ value: count() }).from(employees),
-    ]);
-    return {
-      ok: true,
-      customers: customerCount.value,
-      suppliers: supplierCount.value,
-      employees: employeeCount.value,
-    };
-  } catch {
-    // No Postgres configured yet, or a transient error — the dashboard
-    // shell should still render, just without live numbers.
-    return { ok: false };
-  }
-}
-
+// Server Component — every number below is a live query at request time
+// (see src/lib/db/dashboard-stats.ts), no cached/denormalized totals row.
 export default async function DashboardPage() {
-  const counts = await getCounts();
+  let stats: Awaited<ReturnType<typeof getDashboardStats>> | null = null;
+  try {
+    stats = await getDashboardStats();
+  } catch {
+    stats = null;
+  }
 
-  const stats = [
-    { label: "Customers", icon: Users, value: counts.ok ? counts.customers : null },
-    { label: "Suppliers", icon: Truck, value: counts.ok ? counts.suppliers : null },
-    { label: "Employees", icon: HandCoins, value: counts.ok ? counts.employees : null },
-  ];
+  const now = new Date();
+  const monthLabel = `${MONTH_NAMES[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Overview across all three ledgers.</p>
+        <p className="text-sm text-muted-foreground">
+          A live look at how the farm is doing — {monthLabel}.
+        </p>
       </div>
 
-      {!counts.ok ? (
+      {!stats ? (
         <Card className="border-warning/40 bg-warning/5">
           <CardContent className="pt-6 text-sm">
             <p className="font-medium text-foreground">Database isn&apos;t configured yet.</p>
             <p className="mt-1 text-muted-foreground">
               Fill in <code>.env.local</code> from <code>.env.local.example</code> to see live
-              counts here.
+              numbers here.
             </p>
           </CardContent>
         </Card>
-      ) : null}
+      ) : (
+        <>
+          {/* Headline — the two numbers that answer "who owes whom, right now." */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatCard
+              label="Customer Outstanding"
+              value={formatAmount(stats.customerOutstanding)}
+              sublabel={`Owed to the farm by ${stats.activeCustomers} active customer${stats.activeCustomers === 1 ? "" : "s"}`}
+              icon={Wallet}
+              size="lg"
+              valueClassName="text-success"
+            />
+            <StatCard
+              label="Supplier Payable"
+              value={formatAmount(stats.supplierPayable)}
+              sublabel={`Owed by the farm to ${stats.activeSuppliers} active supplier${stats.activeSuppliers === 1 ? "" : "s"}`}
+              icon={Landmark}
+              size="lg"
+              valueClassName="text-warning"
+            />
+          </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {stats.map(({ label, icon: Icon, value }) => (
-          <Card key={label}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-              <Icon className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <p className="font-heading text-3xl font-bold text-foreground">{value ?? "—"}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+          {/* This month */}
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              This month
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                label="Milk Revenue"
+                value={formatAmount(stats.milkRevenueThisMonth)}
+                sublabel={`${formatAmount(stats.milkVolumeThisMonth)} litres billed`}
+                icon={Milk}
+                delayMs={0}
+              />
+              <StatCard
+                label="Payments Received"
+                value={formatAmount(stats.paymentsReceivedThisMonth)}
+                sublabel="From customers"
+                icon={ArrowDownToLine}
+                delayMs={60}
+              />
+              <StatCard
+                label="Purchases"
+                value={formatAmount(stats.purchasesThisMonth)}
+                sublabel="From suppliers"
+                icon={ShoppingCart}
+                delayMs={120}
+              />
+              <StatCard
+                label="Net Owed to Staff"
+                value={formatAmount(stats.employeeNetOwed)}
+                sublabel={`${stats.activeEmployees} active employee${stats.activeEmployees === 1 ? "" : "s"}`}
+                icon={HandCoins}
+                delayMs={180}
+              />
+            </div>
+          </div>
+
+          {/* At a glance */}
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              At a glance
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <StatCard label="Active Customers" value={String(stats.activeCustomers)} icon={Users} delayMs={0} />
+              <StatCard label="Active Suppliers" value={String(stats.activeSuppliers)} icon={Truck} delayMs={60} />
+              <StatCard label="Active Employees" value={String(stats.activeEmployees)} icon={HandCoins} delayMs={120} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
