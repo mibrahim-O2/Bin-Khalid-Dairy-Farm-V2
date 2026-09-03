@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -13,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/format-date";
-import { approvePendingUser } from "./actions";
+import { approvePendingUser, rejectPendingUser } from "./actions";
 
 export type PendingUser = {
   uid: string;
@@ -23,22 +31,43 @@ export type PendingUser = {
 };
 
 export function PendingUsersList({ initialUsers }: { initialUsers: PendingUser[] }) {
-  const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
-  const [approvingUid, setApprovingUid] = useState<string | null>(null);
+  const [busyUid, setBusyUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Deliberately no router.refresh() here: this list's source of truth is
+  // Firebase Auth's listUsers() export, which has a brief propagation lag
+  // after a mutation (deleteUser/setCustomUserClaims) — refreshing right
+  // away can refetch a still-stale list and silently undo this optimistic
+  // removal, making an already-successful approve/reject look like it
+  // failed (confirmed live: getUser() showed the account gone immediately
+  // after reject, but a refresh right after briefly redrew the old row).
+  // This local filter is the correct, immediate reflection of the
+  // mutation that already succeeded; a real page load afterward always
+  // sees fresh data regardless.
   async function handleApprove(uid: string) {
-    setApprovingUid(uid);
+    setBusyUid(uid);
     setError(null);
     const result = await approvePendingUser({ uid });
-    setApprovingUid(null);
+    setBusyUid(null);
     if (!result.ok) {
       setError(result.error);
       return;
     }
     setUsers((current) => current.filter((u) => u.uid !== uid));
-    router.refresh();
+  }
+
+  async function handleReject(uid: string): Promise<boolean> {
+    setBusyUid(uid);
+    setError(null);
+    const result = await rejectPendingUser({ uid });
+    setBusyUid(null);
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    setUsers((current) => current.filter((u) => u.uid !== uid));
+    return true;
   }
 
   return (
@@ -73,13 +102,20 @@ export function PendingUsersList({ initialUsers }: { initialUsers: PendingUser[]
                     <TableCell>{user.email ?? "—"}</TableCell>
                     <TableCell>{formatDate(user.createdAt)}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        disabled={approvingUid === user.uid}
-                        onClick={() => handleApprove(user.uid)}
-                      >
-                        Approve
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <RejectUserDialog
+                          user={user}
+                          disabled={busyUid === user.uid}
+                          onReject={() => handleReject(user.uid)}
+                        />
+                        <Button
+                          size="sm"
+                          disabled={busyUid === user.uid}
+                          onClick={() => handleApprove(user.uid)}
+                        >
+                          Approve
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -89,5 +125,51 @@ export function PendingUsersList({ initialUsers }: { initialUsers: PendingUser[]
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function RejectUserDialog({
+  user,
+  disabled,
+  onReject,
+}: {
+  user: PendingUser;
+  disabled: boolean;
+  onReject: () => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+
+  async function handleConfirm() {
+    setRejecting(true);
+    const ok = await onReject();
+    setRejecting(false);
+    if (ok) setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <Button variant="destructive" size="sm" disabled={disabled}>
+            Reject
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reject {user.displayName ?? user.email ?? "this sign-up"}?</DialogTitle>
+          <DialogDescription>
+            This permanently deletes their account — they&apos;ll need to sign up again if they
+            should actually have access. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="destructive" disabled={rejecting} onClick={handleConfirm}>
+            Yes, reject and delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

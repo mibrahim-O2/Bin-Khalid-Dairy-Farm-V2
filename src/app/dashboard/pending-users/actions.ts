@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
@@ -91,5 +92,60 @@ export async function approvePendingUser(input: { uid: string }): Promise<Action
     return { ok: true };
   } catch {
     return { ok: false, error: "Failed to approve this user." };
+  }
+}
+
+const rejectSchema = z.object({
+  uid: z.string().min(1),
+});
+
+/**
+ * Rejects a pending sign-up by deleting the Firebase Auth account
+ * outright — a pending user has never been approved, so there's nothing
+ * else of theirs to clean up (no customers/bills/etc. reference a uid
+ * that was never granted `active`). Same Owner-only gating as approve.
+ */
+export async function rejectPendingUser(input: { uid: string }): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can reject pending users." };
+  }
+
+  const parsed = rejectSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { uid } = parsed.data;
+
+  try {
+    const auth = getAdminAuth();
+    const userRecord = await auth.getUser(uid);
+
+    if (userRecord.customClaims?.active === true) {
+      return { ok: false, error: "This account is already active — it can't be rejected." };
+    }
+
+    await auth.deleteUser(uid);
+
+    // Defensive — a pending user is never mirrored into Postgres by
+    // approvePendingUser (that only happens on approval), but delete any
+    // row anyway in case one somehow exists.
+    await getDb().delete(users).where(eq(users.uid, uid));
+
+    await logActivity({
+      action: "user_rejected",
+      targetType: "user",
+      targetId: uid,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { rejectedEmail: userRecord.email ?? null },
+    });
+
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Failed to reject this user." };
   }
 }
