@@ -33,7 +33,7 @@ import type { Customer, CustomerRate, Product } from "@/types/customer";
 import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
 import { finalizeBill, updateDraftBill } from "../actions";
 import { VoidBillDialog } from "./void-bill-dialog";
-import { ShareImageButton } from "@/components/invoice/share-image-button";
+import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
@@ -541,10 +541,10 @@ export function BillEditorClient({
         {bill.status === "finalized" ? (
           <>
             <VoidBillDialog billId={bill.id} customerId={customerId} />
-            <ShareImageButton
+            <WhatsAppShareButtons
               fileName={`${bill.billNumber ?? "bill"}.png`}
-              shareTitle={`Bill ${bill.billNumber ?? ""}`}
-              shareText={`${customer.name} — ${formatAmount(bill.totalPayable ?? bill.subtotal)}`}
+              whatsappNumber={customer.whatsappNumber ?? customer.phone}
+              whatsappMessage={`Assalam-o-Alaikum ${customer.name}, please find your bill ${bill.billNumber ?? ""} from Bin Khalid Dairy Farm attached below. Total payable: Rs. ${formatAmount(bill.totalPayable ?? bill.subtotal)}. Thank you!`}
             >
               <BillInvoiceTemplate
                 bill={bill}
@@ -553,7 +553,7 @@ export function BillEditorClient({
                 paymentSettings={paymentSettings}
                 invoiceSettings={invoiceSettings}
               />
-            </ShareImageButton>
+            </WhatsAppShareButtons>
           </>
         ) : null}
       </div>

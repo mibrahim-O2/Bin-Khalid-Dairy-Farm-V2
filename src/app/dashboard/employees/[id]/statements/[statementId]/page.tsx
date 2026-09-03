@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/lib/db/client";
-import { employeeStatements } from "@/lib/db/schema";
-import { toEmployeeStatement } from "@/lib/db/mappers";
+import { employees, employeeStatements } from "@/lib/db/schema";
+import { toEmployee, toEmployeeStatement } from "@/lib/db/mappers";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { EmployeeLedgerTransaction } from "@/types/employee";
-import { ShareImageButton } from "@/components/invoice/share-image-button";
+import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { EmployeeStatementTemplate } from "@/components/invoice/employee-statement-template";
 import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 
@@ -36,6 +36,8 @@ export default async function EmployeeStatementPage({
   const { id: employeeId, statementId } = await params;
   const [row] = await getDb().select().from(employeeStatements).where(eq(employeeStatements.id, statementId));
   const statement = row ? toEmployeeStatement(row) : null;
+  const [employeeRow] = await getDb().select().from(employees).where(eq(employees.id, employeeId));
+  const employee = employeeRow ? toEmployee(employeeRow) : null;
   const [businessInfo, invoiceSettings] = await Promise.all([getBusinessSettings(), getInvoiceSettings()]);
 
   if (statement === null) {
@@ -66,13 +68,13 @@ export default async function EmployeeStatementPage({
             Generated {formatDate(statement.createdAt)} for {statement.employeeName}
           </p>
         </div>
-        <ShareImageButton
+        <WhatsAppShareButtons
           fileName={`${statement.employeeName}-statement.png`}
-          shareTitle={`Statement — ${statement.employeeName}`}
-          shareText={`${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}`}
+          whatsappNumber={employee?.whatsappNumber ?? employee?.phone ?? null}
+          whatsappMessage={`Assalam-o-Alaikum ${statement.employeeName}, please find your salary statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. — Bin Khalid Dairy Farm`}
         >
           <EmployeeStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
-        </ShareImageButton>
+        </WhatsAppShareButtons>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

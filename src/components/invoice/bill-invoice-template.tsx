@@ -30,8 +30,8 @@ function mergeAccountsBySharedNumber(accounts: PaymentAccount[]): { label: strin
 
 /**
  * A print/share-ready invoice for a finalized customer bill, rendered
- * off-screen and rasterized to a PNG by ShareImageButton (src/components/
- * invoice/share-image-button.tsx) — deliberately plain white/black
+ * off-screen and rasterized to a PNG by WhatsAppShareButtons
+ * (src/components/invoice/whatsapp-share-buttons.tsx) — deliberately plain white/black
  * regardless of the app's own theme, matching how a printed or
  * WhatsApp-shared receipt actually looks. Never shown as part of the
  * normal dashboard UI.

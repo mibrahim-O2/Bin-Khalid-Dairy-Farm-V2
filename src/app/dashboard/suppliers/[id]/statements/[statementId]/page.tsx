@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/lib/db/client";
-import { supplierStatements } from "@/lib/db/schema";
-import { toSupplierStatement } from "@/lib/db/mappers";
+import { suppliers, supplierStatements } from "@/lib/db/schema";
+import { toSupplier, toSupplierStatement } from "@/lib/db/mappers";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { SupplierLedgerTransaction } from "@/types/supplier";
-import { ShareImageButton } from "@/components/invoice/share-image-button";
+import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { SupplierStatementTemplate } from "@/components/invoice/supplier-statement-template";
 import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 
@@ -36,6 +36,8 @@ export default async function SupplierStatementPage({
   const { id: supplierId, statementId } = await params;
   const [row] = await getDb().select().from(supplierStatements).where(eq(supplierStatements.id, statementId));
   const statement = row ? toSupplierStatement(row) : null;
+  const [supplierRow] = await getDb().select().from(suppliers).where(eq(suppliers.id, supplierId));
+  const supplier = supplierRow ? toSupplier(supplierRow) : null;
   const [businessInfo, invoiceSettings] = await Promise.all([getBusinessSettings(), getInvoiceSettings()]);
 
   if (statement === null) {
@@ -66,13 +68,13 @@ export default async function SupplierStatementPage({
             Generated {formatDate(statement.createdAt)} for {statement.supplierName}
           </p>
         </div>
-        <ShareImageButton
+        <WhatsAppShareButtons
           fileName={`${statement.supplierName}-statement.png`}
-          shareTitle={`Statement — ${statement.supplierName}`}
-          shareText={`${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}`}
+          whatsappNumber={supplier?.whatsappNumber ?? supplier?.phone ?? null}
+          whatsappMessage={`Assalam-o-Alaikum, please find our account statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
         >
           <SupplierStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
-        </ShareImageButton>
+        </WhatsAppShareButtons>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
