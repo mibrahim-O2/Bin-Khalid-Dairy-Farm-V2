@@ -1,5 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
+import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import { billLineItems, bills, customerRates, customers, products } from "@/lib/db/schema";
 import { toBill, toCustomer, toCustomerRate, toProduct } from "@/lib/db/mappers";
 import { getBusinessSettings, getInvoiceSettings, getPaymentSettings } from "@/lib/db/settings";
@@ -12,6 +14,8 @@ export default async function BillDetailPage({
 }) {
   const { id: customerId, billId } = await params;
   const db = getDb();
+  const session = await getServerSession();
+  const isOwner = session ? isOwnerSession(session) : false;
 
   const [[billRow], [customerRow], productRows, rateRows, businessInfo, paymentSettings, invoiceSettings] =
     await Promise.all([
@@ -42,6 +46,7 @@ export default async function BillDetailPage({
       businessInfo={businessInfo}
       paymentSettings={paymentSettings}
       invoiceSettings={invoiceSettings}
+      isOwner={isOwner}
     />
   );
 }
