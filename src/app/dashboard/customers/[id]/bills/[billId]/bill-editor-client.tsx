@@ -31,9 +31,9 @@ import {
 import { getBillPaymentStatus, type Bill, type BillLineItem, type BillPaymentStatus, type BillStatus } from "@/types/bill";
 import type { Customer, CustomerRate, Product } from "@/types/customer";
 import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
-import { finalizeBill, updateDraftBill } from "../actions";
+import { finalizeBill, updateDraftBill, updateFinalizedBill } from "../actions";
 import { getMilkAutoFillDefaults } from "../../../../milk-record/actions";
-import { VoidBillDialog } from "./void-bill-dialog";
+import { DeleteBillDialog } from "./delete-bill-dialog";
 import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
 
@@ -66,6 +66,7 @@ export function BillEditorClient({
   businessInfo,
   paymentSettings,
   invoiceSettings,
+  isOwner,
 }: {
   customerId: string;
   bill: Bill | null;
@@ -75,6 +76,7 @@ export function BillEditorClient({
   businessInfo: BusinessSettings;
   paymentSettings: PaymentSettings;
   invoiceSettings: InvoiceSettings;
+  isOwner: boolean;
 }) {
   const router = useRouter();
   const ratesByProductId = useMemo(() => {
@@ -91,6 +93,10 @@ export function BillEditorClient({
   const [lineItems, setLineItems] = useState<BillLineItem[]>(bill?.lineItems ?? []);
   const [note, setNote] = useState(bill?.note ?? "");
   const [selectedProductId, setSelectedProductId] = useState("");
+  // Owner-only correction mode for an already-finalized bill — see
+  // updateFinalizedBill's doc comment. Off by default even for the
+  // Owner, so a finalized bill still reads as read-only at a glance.
+  const [ownerEditing, setOwnerEditing] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -215,6 +221,38 @@ export function BillEditorClient({
       setError(result.error);
       return;
     }
+    // Lands in the Customer Ledger — same reasoning as the purchase
+    // editor's post-finalize redirect.
+    router.push(`/dashboard/customers/${customerId}/ledger`);
+  }
+
+  async function handleSaveFinalizedEdit() {
+    if (!bill) return;
+    setSaving(true);
+    setError(null);
+    const result = await updateFinalizedBill({
+      billId: bill.id,
+      startDate,
+      endDate,
+      lineItems: computedLines.map(({ productId, productName, unit, billingType, rate, dailyQty, extra, less, quantity }) => ({
+        productId,
+        productName,
+        unit,
+        billingType,
+        rate,
+        dailyQty,
+        extra,
+        less,
+        quantity,
+      })),
+      note: note.trim() || undefined,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOwnerEditing(false);
     router.refresh();
   }
 
@@ -244,6 +282,9 @@ export function BillEditorClient({
   }
 
   const isDraft = bill.status === "draft";
+  // Owner-only correction of an already-finalized bill reuses this same
+  // draft-editing UI — see ownerEditing's declaration above.
+  const isEditable = isDraft || ownerEditing;
 
   return (
     <div className="flex flex-col gap-6">
@@ -304,7 +345,7 @@ export function BillEditorClient({
               id="start-date"
               type="date"
               value={startDate}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
@@ -314,14 +355,14 @@ export function BillEditorClient({
               id="end-date"
               type="date"
               value={endDate}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-2">
             <Label>Days</Label>
             <p className="flex h-8 items-center text-sm text-muted-foreground">
-              {isDraft ? days : bill.days} (auto-calculated)
+              {isEditable ? days : bill.days} (auto-calculated)
             </p>
           </div>
         </CardContent>
@@ -332,7 +373,7 @@ export function BillEditorClient({
           <CardTitle>Line items</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {isDraft ? (
+          {isEditable ? (
             <div className="flex flex-wrap items-end gap-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="add-product">Add product</Label>
@@ -364,13 +405,13 @@ export function BillEditorClient({
                   <TableHead>Quantity inputs</TableHead>
                   <TableHead>Total qty</TableHead>
                   <TableHead>Line total</TableHead>
-                  {isDraft ? <TableHead className="text-right">Actions</TableHead> : null}
+                  {isEditable ? <TableHead className="text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {computedLines.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isDraft ? 6 : 5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={isEditable ? 6 : 5} className="text-center text-muted-foreground">
                       No line items yet.
                     </TableCell>
                   </TableRow>
@@ -382,7 +423,7 @@ export function BillEditorClient({
                         <span className="ml-1 text-xs text-muted-foreground">/{line.unit}</span>
                       </TableCell>
                       <TableCell>
-                        {isDraft ? (
+                        {isEditable ? (
                           <Input
                             type="number"
                             min="0"
@@ -400,7 +441,7 @@ export function BillEditorClient({
                       </TableCell>
                       <TableCell>
                         {line.billingType === "milk" ? (
-                          isDraft ? (
+                          isEditable ? (
                             <div className="flex gap-2">
                               <div className="flex flex-col gap-1">
                                 <Label className="text-[10px] font-normal text-muted-foreground">
@@ -452,7 +493,7 @@ export function BillEditorClient({
                           ) : (
                             `Daily ${line.dailyQty}, +${line.extra ?? 0}, −${line.less ?? 0}`
                           )
-                        ) : isDraft ? (
+                        ) : isEditable ? (
                           <Input
                             type="number"
                             min="0"
@@ -470,7 +511,7 @@ export function BillEditorClient({
                       </TableCell>
                       <TableCell>{line.totalQty}</TableCell>
                       <TableCell>{formatAmount(line.lineTotal)}</TableCell>
-                      {isDraft ? (
+                      {isEditable ? (
                         <TableCell className="text-right">
                           <Button
                             type="button"
@@ -494,7 +535,7 @@ export function BillEditorClient({
             <Textarea
               id="note"
               value={note}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
             />
@@ -508,9 +549,9 @@ export function BillEditorClient({
         </CardHeader>
         <CardContent className="flex flex-col gap-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
+            <span className="text-muted-foreground">Subtotal{ownerEditing ? " (preview)" : ""}</span>
             <span className="font-medium text-foreground">
-              {formatAmount(isDraft ? subtotal : bill.subtotal)}
+              {formatAmount(isEditable ? subtotal : bill.subtotal)}
             </span>
           </div>
           <div className="flex justify-between">
@@ -528,10 +569,14 @@ export function BillEditorClient({
             </div>
           ) : null}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
-            <span className="font-medium text-foreground">Total payable</span>
+            <span className="font-medium text-foreground">Total payable{ownerEditing ? " (preview)" : ""}</span>
             <span className="font-heading font-bold text-foreground">
               {formatAmount(
-                isDraft ? subtotal + customer.balance : (bill.totalPayable ?? bill.subtotal)
+                isDraft
+                  ? subtotal + customer.balance
+                  : ownerEditing
+                    ? subtotal + (bill.previousBalance ?? 0)
+                    : (bill.totalPayable ?? bill.subtotal)
               )}
             </span>
           </div>
@@ -564,7 +609,23 @@ export function BillEditorClient({
         ) : null}
         {bill.status === "finalized" ? (
           <>
-            <VoidBillDialog billId={bill.id} customerId={customerId} />
+            {isOwner ? (
+              ownerEditing ? (
+                <>
+                  <Button variant="outline" disabled={saving} onClick={() => setOwnerEditing(false)}>
+                    Cancel
+                  </Button>
+                  <Button disabled={saving || computedLines.length === 0} onClick={handleSaveFinalizedEdit}>
+                    Save changes
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" onClick={() => setOwnerEditing(true)}>
+                  Edit
+                </Button>
+              )
+            ) : null}
+            {isOwner ? <DeleteBillDialog billId={bill.id} customerId={customerId} /> : null}
             <WhatsAppShareButtons
               fileName={`${bill.billNumber ?? "bill"}.png`}
               whatsappNumber={customer.whatsappNumber ?? customer.phone}
