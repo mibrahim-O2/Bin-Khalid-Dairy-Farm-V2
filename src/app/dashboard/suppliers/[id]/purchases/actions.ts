@@ -6,17 +6,19 @@
 // Quantity × Rate line item shape from src/lib/purchasing.ts (no
 // milk-style daily/extra/less calculation on the supplier side).
 //
-// finalizePurchase/voidPurchase also write the supplier_ledger_transactions
-// row directly (added in M8, once that table itself moved to Postgres) —
-// mirrors finalizeBill/voidBill's ledger entries exactly.
+// finalizePurchase/deletePurchase also write/reverse the
+// supplier_ledger_transactions row directly (added in M8, once that table
+// itself moved to Postgres) — mirrors finalizeBill/deleteBill exactly.
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { purchaseLineItems, purchases, supplierLedgerTransactions, suppliers } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
+import { logActivity } from "@/lib/db/activity-log";
 import { calculateLineTotal, calculateSubtotal } from "@/lib/purchasing";
 import { isoDateSchema } from "@/lib/zod-date";
 
@@ -89,12 +91,15 @@ export async function updateDraftPurchase(input: z.infer<typeof updateDraftSchem
   }
   const { purchaseId, purchaseDate, lineItems, note } = parsed.data;
 
+  let supplierId: string | undefined;
+
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [purchase] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId));
       if (!purchase) throw new Error("Purchase not found.");
       if (purchase.status !== "draft") throw new Error("Only a draft purchase can be edited.");
+      supplierId = purchase.supplierId;
 
       const computed = lineItems.map((line) => ({ ...line, lineTotal: calculateLineTotal(line) }));
       const subtotal = calculateSubtotal(computed.map((line) => line.lineTotal));
@@ -125,7 +130,7 @@ export async function updateDraftPurchase(input: z.infer<typeof updateDraftSchem
         );
       }
     });
-    revalidatePath(`/dashboard/suppliers/${input.purchaseId}`);
+    if (supplierId) revalidatePath(`/dashboard/suppliers/${supplierId}`);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to save." };
@@ -153,12 +158,15 @@ export async function finalizePurchase(input: { purchaseId: string }): Promise<A
   }
   const { purchaseId } = parsed.data;
 
+  let supplierId: string | undefined;
+
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [purchase] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId));
       if (!purchase) throw new Error("Purchase not found.");
       if (purchase.status !== "draft") throw new Error("Only a draft purchase can be finalized.");
+      supplierId = purchase.supplierId;
 
       const lineRows = await tx
         .select()
@@ -217,62 +225,171 @@ export async function finalizePurchase(input: { purchaseId: string }): Promise<A
         })
         .where(eq(purchases.id, purchaseId));
     });
-    revalidatePath(`/dashboard/suppliers/${purchaseId}`);
+    if (supplierId) {
+      revalidatePath(`/dashboard/suppliers/${supplierId}`);
+      revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to finalize purchase." };
   }
 }
 
-const voidSchema = z.object({
+const updateFinalizedSchema = z.object({
   purchaseId: z.string().min(1),
-  reason: z.string().min(1).max(500),
-  createReplacement: z.boolean().optional(),
+  purchaseDate: isoDateSchema,
+  lineItems: z.array(lineItemSchema),
+  note: z.string().max(2000).optional(),
 });
 
 /**
- * Voids a finalized purchase: never deletes or edits its recorded amounts.
- * Updates the cached balance and optionally creates a linked replacement
- * draft, atomically. Mirrors voidBill.
+ * Owner-only correction of an already-finalized purchase (the ledger's
+ * Edit action) — this app otherwise treats a finalized record as
+ * immutable, but the Owner needs a way to fix a genuine mistake without
+ * deleting and re-entering it from scratch. Recomputes the subtotal from
+ * the new line items and applies only the DELTA (new − old) to the
+ * supplier's cached balance, and updates the matching "purchase" ledger
+ * row's own amount to match — the ledger view's running balance is
+ * derived from that ledger row, not from purchases.subtotal, so both
+ * must move together or the two would silently disagree.
  */
-export async function voidPurchase(input: {
-  purchaseId: string;
-  reason: string;
-  createReplacement?: boolean;
-}): Promise<ActionResult & { replacementPurchaseId?: string }> {
+export async function updateFinalizedPurchase(input: z.infer<typeof updateFinalizedSchema>): Promise<ActionResult> {
   const session = await getServerSession();
   if (!session || !session.active) {
     return { ok: false, error: "Not authorized." };
   }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can edit a finalized purchase." };
+  }
 
-  const parsed = voidSchema.safeParse(input);
+  const parsed = updateFinalizedSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: "Invalid input." };
   }
-  const { purchaseId, reason, createReplacement } = parsed.data;
+  const { purchaseId, purchaseDate, lineItems, note } = parsed.data;
+  if (lineItems.length === 0) {
+    return { ok: false, error: "A purchase must have at least one line item." };
+  }
 
-  let replacementPurchaseId: string | undefined;
+  let supplierId: string | undefined;
 
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [purchase] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId));
       if (!purchase) throw new Error("Purchase not found.");
-      if (purchase.status !== "finalized") throw new Error("Only a finalized purchase can be voided.");
+      if (purchase.status !== "finalized") throw new Error("Only a finalized purchase can be edited this way.");
+      supplierId = purchase.supplierId;
+
+      const computed = lineItems.map((line) => ({ ...line, lineTotal: calculateLineTotal(line) }));
+      const newSubtotal = calculateSubtotal(computed.map((line) => line.lineTotal));
+      const oldSubtotal = Number(purchase.subtotal);
+      const delta = Math.round((newSubtotal - oldSubtotal) * 100) / 100;
+      const now = new Date();
+
+      await tx.delete(purchaseLineItems).where(eq(purchaseLineItems.purchaseId, purchaseId));
+      await tx.insert(purchaseLineItems).values(
+        computed.map((line, index) => ({
+          purchaseId,
+          itemId: line.itemId,
+          itemName: line.itemName,
+          unit: line.unit,
+          rate: String(line.rate),
+          quantity: String(line.quantity),
+          lineTotal: String(line.lineTotal),
+          sortOrder: index,
+        }))
+      );
+
+      const previousBalance = purchase.previousBalance !== null ? Number(purchase.previousBalance) : 0;
+      await tx
+        .update(purchases)
+        .set({
+          purchaseDate,
+          subtotal: String(newSubtotal),
+          totalPayable: String(Math.round((previousBalance + newSubtotal) * 100) / 100),
+          note: note?.trim() || null,
+          updatedAt: now,
+        })
+        .where(eq(purchases.id, purchaseId));
+
+      await tx
+        .update(supplierLedgerTransactions)
+        .set({ amount: String(newSubtotal) })
+        .where(and(eq(supplierLedgerTransactions.purchaseId, purchaseId), eq(supplierLedgerTransactions.type, "purchase")));
+
+      await tx
+        .update(suppliers)
+        .set({ balance: sql`${suppliers.balance} + ${delta}`, updatedAt: now })
+        .where(eq(suppliers.id, purchase.supplierId));
+    });
+    if (supplierId) {
+      revalidatePath(`/dashboard/suppliers/${supplierId}`);
+      revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to save changes." };
+  }
+}
+
+const deleteSchema = z.object({
+  purchaseId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+  createReplacement: z.boolean().optional(),
+});
+
+/**
+ * Permanently deletes a finalized purchase — a deliberate departure from
+ * this app's usual "never hard-delete a financial record" rule (see
+ * voidBill's history in git log for the superseded reversing-entry
+ * approach). In practice this action was almost always used to correct a
+ * plain data-entry mistake, where keeping a permanent "voided" trace
+ * served no purpose and just cluttered the ledger/statements.
+ *
+ * Reverses the supplier's cached balance by the purchase's own subtotal
+ * (identical math to the old void), then deletes the row — its line
+ * items, supplier_ledger_transactions row, and any
+ * supplier_payment_allocations rows all cascade away via their FK
+ * (ON DELETE CASCADE), so nothing else needs to be cleaned up by hand.
+ * Owner-only: matches the ledger's Edit/Delete gating (#2), a tightening
+ * from the old void's any-active-admin gate, since an unrecoverable
+ * delete is a materially bigger blast radius than a reversible void was.
+ */
+export async function deletePurchase(input: {
+  purchaseId: string;
+  reason?: string;
+  createReplacement?: boolean;
+}): Promise<ActionResult & { replacementPurchaseId?: string }> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a purchase." };
+  }
+
+  const parsed = deleteSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { purchaseId, reason, createReplacement } = parsed.data;
+
+  let replacementPurchaseId: string | undefined;
+  let supplierId: string | undefined;
+  let subtotalForLog = 0;
+
+  try {
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      const [purchase] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId));
+      if (!purchase) throw new Error("Purchase not found.");
+      if (purchase.status !== "finalized") throw new Error("Only a finalized purchase can be deleted.");
+      supplierId = purchase.supplierId;
+      subtotalForLog = Number(purchase.subtotal);
 
       const now = new Date();
       const subtotal = Number(purchase.subtotal);
-
-      await tx.insert(supplierLedgerTransactions).values({
-        supplierId: purchase.supplierId,
-        type: "purchase_void",
-        direction: "credit",
-        amount: String(subtotal),
-        note: `Void of purchase: ${reason}`,
-        purchaseId,
-        createdByUid: session.uid,
-        createdByEmail: session.email,
-      });
 
       await tx
         .update(suppliers)
@@ -296,7 +413,6 @@ export async function voidPurchase(input: {
           amountPaid: "0",
           note: purchase.note,
           createdByUid: session.uid,
-          replacesPurchaseId: purchaseId,
         });
         if (lineRows.length > 0) {
           await tx.insert(purchaseLineItems).values(
@@ -314,22 +430,24 @@ export async function voidPurchase(input: {
         }
       }
 
-      await tx
-        .update(purchases)
-        .set({
-          status: "void",
-          voidedAt: now,
-          voidedByUid: session.uid,
-          voidedByEmail: session.email,
-          voidReason: reason,
-          replacedByPurchaseId: replacementPurchaseId ?? null,
-          updatedAt: now,
-        })
-        .where(eq(purchases.id, purchaseId));
+      // Cascades: purchase_line_items, supplier_ledger_transactions,
+      // supplier_payment_allocations.
+      await tx.delete(purchases).where(eq(purchases.id, purchaseId));
     });
-    revalidatePath(`/dashboard/suppliers/${input.purchaseId}`);
+    await logActivity({
+      action: "purchase_deleted",
+      targetType: "purchase",
+      targetId: purchaseId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { supplierId, subtotal: subtotalForLog, reason: reason ?? null, replacementPurchaseId: replacementPurchaseId ?? null },
+    });
+    if (supplierId) {
+      revalidatePath(`/dashboard/suppliers/${supplierId}`);
+      revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
+    }
     return { ok: true, replacementPurchaseId };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Failed to void purchase." };
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to delete purchase." };
   }
 }
