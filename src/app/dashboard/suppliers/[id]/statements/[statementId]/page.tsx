@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/lib/db/client";
-import { suppliers, supplierStatements } from "@/lib/db/schema";
-import { toSupplier, toSupplierStatement } from "@/lib/db/mappers";
+import { purchaseLineItems, purchases, suppliers, supplierStatements } from "@/lib/db/schema";
+import { toPurchase, toSupplier, toSupplierStatement } from "@/lib/db/mappers";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,9 +16,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { SupplierLedgerTransaction } from "@/types/supplier";
+import type { Purchase } from "@/types/purchase";
 import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { SupplierStatementTemplate } from "@/components/invoice/supplier-statement-template";
 import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
+import { StatementPurchasesTable } from "./statement-purchases-table";
 
 const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
   opening_balance: "Opening Balance",
@@ -51,6 +53,50 @@ export default async function SupplierStatementPage({
     );
   }
 
+  // "purchase" entries carry item/rate/quantity via their linked purchase
+  // (looked up live, not from the frozen snapshot) so the statement can
+  // list them in the same Date | Item Name | Rate | Quantity | Total
+  // Amount structure as the Purchases list. This is safe because a
+  // purchase's own line items are immutable once finalized — voiding
+  // never mutates them, it only adds a separate purchase_void entry
+  // (handled below via `otherEntries`, alongside payments/opening
+  // balance, none of which have a per-item shape to itemize).
+  const purchaseIds = statement.transactions
+    .filter((entry) => entry.type === "purchase" && entry.purchaseId)
+    .map((entry) => entry.purchaseId as string);
+  const purchaseRows =
+    purchaseIds.length > 0
+      ? await getDb().select().from(purchases).where(inArray(purchases.id, purchaseIds))
+      : [];
+  const lineItemRows =
+    purchaseIds.length > 0
+      ? await getDb()
+          .select()
+          .from(purchaseLineItems)
+          .where(inArray(purchaseLineItems.purchaseId, purchaseIds))
+          .orderBy(purchaseLineItems.sortOrder)
+      : [];
+  const lineItemsByPurchaseId = new Map<string, typeof lineItemRows>();
+  for (const line of lineItemRows) {
+    const existing = lineItemsByPurchaseId.get(line.purchaseId) ?? [];
+    existing.push(line);
+    lineItemsByPurchaseId.set(line.purchaseId, existing);
+  }
+  const purchaseById = new Map<string, Purchase>(
+    purchaseRows.map((r) => [r.id, toPurchase(r, lineItemsByPurchaseId.get(r.id) ?? [])])
+  );
+
+  const purchaseEntries: { transaction: SupplierLedgerTransaction; purchase: Purchase }[] = [];
+  const otherEntries: SupplierLedgerTransaction[] = [];
+  for (const entry of statement.transactions) {
+    const purchase = entry.type === "purchase" && entry.purchaseId ? purchaseById.get(entry.purchaseId) : undefined;
+    if (purchase) {
+      purchaseEntries.push({ transaction: entry, purchase });
+    } else {
+      otherEntries.push(entry);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -73,7 +119,13 @@ export default async function SupplierStatementPage({
           whatsappNumber={supplier?.whatsappNumber ?? supplier?.phone ?? null}
           whatsappMessage={`Assalam-o-Alaikum, please find our account statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
         >
-          <SupplierStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
+          <SupplierStatementTemplate
+            statement={statement}
+            purchaseEntries={purchaseEntries}
+            otherEntries={otherEntries}
+            businessInfo={businessInfo}
+            invoiceSettings={invoiceSettings}
+          />
         </WhatsAppShareButtons>
       </div>
 
@@ -100,7 +152,20 @@ export default async function SupplierStatementPage({
         </Card>
       </div>
 
+      {supplier ? (
+        <StatementPurchasesTable
+          supplierId={supplierId}
+          supplier={supplier}
+          purchaseEntries={purchaseEntries}
+          businessInfo={businessInfo}
+          invoiceSettings={invoiceSettings}
+        />
+      ) : null}
+
       <Card>
+        <CardHeader>
+          <CardTitle>Other transactions</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
@@ -114,14 +179,14 @@ export default async function SupplierStatementPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {statement.transactions.length === 0 ? (
+                {otherEntries.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground">
-                      No transactions in this period.
+                      No payments, opening balance, or void entries in this period.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  statement.transactions.map((entry) => (
+                  otherEntries.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell>{formatDate(entry.createdAt)}</TableCell>
                       <TableCell className="font-medium text-foreground">
