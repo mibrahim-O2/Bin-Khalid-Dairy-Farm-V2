@@ -57,9 +57,28 @@ export function MilkRecordTable({
 
   const customersById = useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers]);
 
+  const computedRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const daysMissed =
+          row.pause?.resumeDate != null ? calculateDaysMissed(row.pause.pauseDate, row.pause.resumeDate) : null;
+        const milkMissed =
+          daysMissed !== null && row.pause
+            ? calculateMilkMissed(row.pause.dailyMilkQtyAtPause, row.pause.reducedDailyQty, daysMissed)
+            : null;
+        const hasOpenPause = row.pause !== null && row.pause.resumeDate === null;
+        return { ...row, daysMissed, milkMissed, hasOpenPause };
+      }),
+    [rows]
+  );
+
   return (
     <div className="flex flex-col gap-8">
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* Desktop: real table (8 columns). Mobile: one card per row — see
+          the same dual-layout pattern used across every other
+          table-heavy view this pass (Purchases list, Livestock, supplier
+          statements). */}
+      <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -74,57 +93,94 @@ export function MilkRecordTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 ? (
+            {computedRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No active customers yet.
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row) => {
-                const daysMissed =
-                  row.pause?.resumeDate != null ? calculateDaysMissed(row.pause.pauseDate, row.pause.resumeDate) : null;
-                const milkMissed =
-                  daysMissed !== null && row.pause
-                    ? calculateMilkMissed(row.pause.dailyMilkQtyAtPause, row.pause.reducedDailyQty, daysMissed)
-                    : null;
-                const hasOpenPause = row.pause !== null && row.pause.resumeDate === null;
-
-                return (
-                  <TableRow key={row.pause?.id ?? row.customer.id}>
-                    <TableCell className="font-medium text-foreground">{row.customer.name}</TableCell>
-                    <TableCell>{row.customer.joiningDate ? formatDate(row.customer.joiningDate) : "—"}</TableCell>
-                    <TableCell className="text-right">{row.customer.dailyMilkQty ?? "—"}</TableCell>
-                    <TableCell>{row.pause ? formatDate(row.pause.pauseDate) : "—"}</TableCell>
-                    <TableCell>
-                      {row.pause?.resumeDate ? formatDate(row.pause.resumeDate) : hasOpenPause ? "Pending" : "—"}
-                      {row.pause?.reducedDailyQty != null ? (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          (reduced to {row.pause.reducedDailyQty})
-                        </span>
+              computedRows.map((row) => (
+                <TableRow key={row.pause?.id ?? row.customer.id}>
+                  <TableCell className="font-medium text-foreground">{row.customer.name}</TableCell>
+                  <TableCell>{row.customer.joiningDate ? formatDate(row.customer.joiningDate) : "—"}</TableCell>
+                  <TableCell className="text-right">{row.customer.dailyMilkQty ?? "—"}</TableCell>
+                  <TableCell>{row.pause ? formatDate(row.pause.pauseDate) : "—"}</TableCell>
+                  <TableCell>
+                    {row.pause?.resumeDate ? formatDate(row.pause.resumeDate) : row.hasOpenPause ? "Pending" : "—"}
+                    {row.pause?.reducedDailyQty != null ? (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        (reduced to {row.pause.reducedDailyQty})
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right">{row.daysMissed ?? "—"}</TableCell>
+                  <TableCell className="text-right">{row.milkMissed ?? "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {row.hasOpenPause && row.pause ? <ResumeDialog pause={row.pause} /> : null}
+                      {!row.hasOpenPause ? (
+                        <AddPauseDialog
+                          customerId={row.customer.id}
+                          customerName={row.customer.name}
+                          standardDailyMilkQty={row.customer.dailyMilkQty}
+                        />
                       ) : null}
-                    </TableCell>
-                    <TableCell className="text-right">{daysMissed ?? "—"}</TableCell>
-                    <TableCell className="text-right">{milkMissed ?? "—"}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {hasOpenPause && row.pause ? <ResumeDialog pause={row.pause} /> : null}
-                        {!hasOpenPause ? (
-                          <AddPauseDialog
-                            customerId={row.customer.id}
-                            customerName={row.customer.name}
-                            standardDailyMilkQty={row.customer.dailyMilkQty}
-                          />
-                        ) : null}
-                        {row.pause && isOwner ? <DeletePauseDialog pauseId={row.pause.id} /> : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                      {row.pause && isOwner ? <DeletePauseDialog pauseId={row.pause.id} /> : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 md:hidden">
+        {computedRows.length === 0 ? (
+          <p className="text-center text-sm text-muted-foreground">No active customers yet.</p>
+        ) : (
+          computedRows.map((row) => (
+            <div key={row.pause?.id ?? row.customer.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-foreground">{row.customer.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Joined {row.customer.joiningDate ? formatDate(row.customer.joiningDate) : "—"}
+                  </p>
+                </div>
+                <p className="text-right text-sm text-muted-foreground">
+                  {row.customer.dailyMilkQty ?? "—"} L/day
+                </p>
+              </div>
+              {row.pause ? (
+                <div className="flex flex-col gap-0.5 text-sm text-muted-foreground">
+                  <p>
+                    Paused {formatDate(row.pause.pauseDate)} &middot; Resume{" "}
+                    {row.pause.resumeDate ? formatDate(row.pause.resumeDate) : row.hasOpenPause ? "Pending" : "—"}
+                    {row.pause.reducedDailyQty != null ? ` (reduced to ${row.pause.reducedDailyQty})` : ""}
+                  </p>
+                  {row.daysMissed !== null ? (
+                    <p>
+                      Days missed {row.daysMissed} &middot; Milk missed {row.milkMissed}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap justify-end gap-2">
+                {row.hasOpenPause && row.pause ? <ResumeDialog pause={row.pause} /> : null}
+                {!row.hasOpenPause ? (
+                  <AddPauseDialog
+                    customerId={row.customer.id}
+                    customerName={row.customer.name}
+                    standardDailyMilkQty={row.customer.dailyMilkQty}
+                  />
+                ) : null}
+                {row.pause && isOwner ? <DeletePauseDialog pauseId={row.pause.id} /> : null}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <ExtraMilkSection customers={customers} customersById={customersById} extraMilk={extraMilk} isOwner={isOwner} />
@@ -357,8 +413,8 @@ function ExtraMilkSection({
         <CardTitle>Extra Milk</CardTitle>
         <AddExtraMilkDialog customers={customers} />
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+      <CardContent className="flex flex-col gap-3 p-0">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -395,6 +451,30 @@ function ExtraMilkSection({
               )}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="flex flex-col gap-3 px-4 pb-4 md:hidden">
+          {extraMilk.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground">No extra milk recorded yet.</p>
+          ) : (
+            extraMilk.map((entry) => (
+              <div key={entry.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-foreground">{customersById.get(entry.customerId)?.name ?? "—"}</p>
+                    <p className="text-sm text-muted-foreground">{formatDate(entry.date)}</p>
+                  </div>
+                  <p className="text-sm font-medium text-foreground">{entry.quantity} L</p>
+                </div>
+                {entry.note ? <p className="text-sm text-muted-foreground">{entry.note}</p> : null}
+                {isOwner ? (
+                  <div className="flex justify-end">
+                    <DeleteExtraMilkDialog extraMilkId={entry.id} />
+                  </div>
+                ) : null}
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
