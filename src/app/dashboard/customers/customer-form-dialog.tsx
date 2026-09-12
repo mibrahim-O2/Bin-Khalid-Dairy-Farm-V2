@@ -31,6 +31,7 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [whatsappNumber, setWhatsappNumber] = useState(customer?.whatsappNumber ?? "");
   const [address, setAddress] = useState(customer?.address ?? "");
+  const [dailyMilkQty, setDailyMilkQty] = useState(customer?.dailyMilkQty?.toString() ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +41,7 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
       setPhone(customer?.phone ?? "");
       setWhatsappNumber(customer?.whatsappNumber ?? "");
       setAddress(customer?.address ?? "");
+      setDailyMilkQty(customer?.dailyMilkQty?.toString() ?? "");
       setError(null);
     }
   }, [open, customer]);
@@ -51,17 +53,30 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
       return;
     }
 
+    const parsedDailyMilkQty = dailyMilkQty.trim() === "" ? undefined : Number(dailyMilkQty);
+    if (parsedDailyMilkQty !== undefined && (!Number.isFinite(parsedDailyMilkQty) || parsedDailyMilkQty < 0)) {
+      setError("Enter a valid, non-negative daily milk quantity.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     if (customer) {
-      const result = await updateCustomer({ customerId: customer.id, name, phone, whatsappNumber, address });
+      const result = await updateCustomer({
+        customerId: customer.id,
+        name,
+        phone,
+        whatsappNumber,
+        address,
+        dailyMilkQty: parsedDailyMilkQty,
+      });
       setSaving(false);
       if (!result.ok) {
         setError(result.error);
         return;
       }
     } else {
-      const result = await createCustomer({ name, phone, whatsappNumber, address });
+      const result = await createCustomer({ name, phone, whatsappNumber, address, dailyMilkQty: parsedDailyMilkQty });
       setSaving(false);
       if (!result.ok) {
         setError(result.error);
@@ -105,6 +120,18 @@ export function CustomerFormDialog({ customer, trigger, onCreated }: CustomerFor
               placeholder="Leave blank if same as phone"
               value={whatsappNumber}
               onChange={(e) => setWhatsappNumber(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="customer-daily-milk-qty">Daily Milk Quantity</Label>
+            <Input
+              id="customer-daily-milk-qty"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="e.g. 2.5"
+              value={dailyMilkQty}
+              onChange={(e) => setDailyMilkQty(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-2">
