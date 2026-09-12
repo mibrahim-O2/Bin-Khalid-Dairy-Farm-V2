@@ -7,6 +7,7 @@ import { Wordmark } from "@/components/wordmark";
 import { DevCredit } from "@/components/dev-credit";
 import { ScrollReveal } from "@/components/scroll-reveal";
 import { ProductsShowcase } from "@/components/landing/products-showcase";
+import { HerdSection } from "@/components/landing/herd-section";
 import { FoundersSection } from "@/components/landing/founders-section";
 import { getBusinessSettings } from "@/lib/db/settings";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -144,6 +145,8 @@ export default async function Home() {
           </ScrollReveal>
           <ProductsShowcase />
         </section>
+
+        <HerdSection />
 
         <FoundersSection />
       </main>
