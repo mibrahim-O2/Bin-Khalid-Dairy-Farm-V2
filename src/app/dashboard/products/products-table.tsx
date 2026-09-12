@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,7 +24,47 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import type { Product } from "@/types/customer";
 import { ProductFormDialog } from "./product-form-dialog";
-import { setProductActive } from "./actions";
+import { deleteProduct, setProductActive } from "./actions";
+
+function DeleteProductDialog({ product, onDeleted }: { product: Product; onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    setDeleting(true);
+    setError(null);
+    const result = await deleteProduct({ productId: product.id });
+    setDeleting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOpen(false);
+    onDeleted();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) setError(null); }}>
+      <DialogTrigger render={<Button variant="destructive" size="sm">Delete</Button>} />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {product.name}?</DialogTitle>
+          <DialogDescription>
+            This permanently removes the product. It only succeeds if it&apos;s never been used in
+            a bill — if it has, archive it instead.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button variant="destructive" disabled={deleting} onClick={handleConfirm}>
+            Yes, delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function ProductsTable({ products }: { products: Product[] }) {
   const router = useRouter();
@@ -94,6 +143,7 @@ export function ProductsTable({ products }: { products: Product[] }) {
                         >
                           {product.active ? "Archive" : "Unarchive"}
                         </Button>
+                        <DeleteProductDialog product={product} onDeleted={() => router.refresh()} />
                       </TableCell>
                     </TableRow>
                   ))
