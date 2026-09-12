@@ -1,6 +1,7 @@
-import { Users, Truck, HandCoins, Milk, ShoppingCart, Wallet, Landmark, ArrowDownToLine } from "lucide-react";
+import { Users, Truck, HandCoins, Milk, ShoppingCart, Wallet, Landmark, ArrowDownToLine, Beef, PawPrint, Baby, Sparkles, Layers } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { getDashboardStats } from "@/lib/db/dashboard-stats";
+import { getLivestockSummary } from "@/lib/db/livestock-stats";
 import { formatAmount } from "@/lib/format-number";
 import { StatCard } from "./stat-card";
 
@@ -13,8 +14,9 @@ const MONTH_NAMES = [
 // (see src/lib/db/dashboard-stats.ts), no cached/denormalized totals row.
 export default async function DashboardPage() {
   let stats: Awaited<ReturnType<typeof getDashboardStats>> | null = null;
+  let livestock: Awaited<ReturnType<typeof getLivestockSummary>> | null = null;
   try {
-    stats = await getDashboardStats();
+    [stats, livestock] = await Promise.all([getDashboardStats(), getLivestockSummary()]);
   } catch {
     stats = null;
   }
@@ -31,7 +33,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {!stats ? (
+      {!stats || !livestock ? (
         <Card className="border-warning/40 bg-warning/5">
           <CardContent className="pt-6 text-sm">
             <p className="font-medium text-foreground">Database isn&apos;t configured yet.</p>
@@ -103,6 +105,30 @@ export default async function DashboardPage() {
                 sublabel={`${stats.activeEmployees} active employee${stats.activeEmployees === 1 ? "" : "s"}`}
                 icon={HandCoins}
                 delayMs={180}
+              />
+            </div>
+          </div>
+
+          {/* Livestock — active-only counts, rolled up by top-level group
+              (see src/lib/db/livestock-stats.ts). "Other" only shows up
+              once an admin has actually added a non-core category. */}
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Livestock
+            </h2>
+            <div className={`grid gap-4 sm:grid-cols-2 ${livestock.other > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+              <StatCard label="Buffalo" value={String(livestock.buffalo)} icon={PawPrint} delayMs={0} />
+              <StatCard label="Cows" value={String(livestock.cow)} icon={Beef} delayMs={30} />
+              <StatCard label="Calves" value={String(livestock.calf)} icon={Baby} delayMs={60} />
+              {livestock.other > 0 ? (
+                <StatCard label="Other" value={String(livestock.other)} icon={Sparkles} delayMs={90} />
+              ) : null}
+              <StatCard
+                label="Total Animals"
+                value={String(livestock.total)}
+                sublabel="Active on the farm right now"
+                icon={Layers}
+                delayMs={120}
               />
             </div>
           </div>
