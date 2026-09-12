@@ -16,35 +16,26 @@ import {
 } from "@/components/ui/table";
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
-import {
-  getPurchasePaymentStatus,
-  type Purchase,
-  type PurchasePaymentStatus,
-  type PurchaseStatus,
-} from "@/types/purchase";
+import type { Purchase } from "@/types/purchase";
+import type { Supplier } from "@/types/supplier";
+import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
+import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { PurchaseInvoiceTemplate } from "@/components/invoice/purchase-invoice-template";
 import { createDraftPurchase } from "./purchases/actions";
 
-const statusVariant: Record<PurchaseStatus, "default" | "secondary" | "destructive"> = {
-  draft: "secondary",
-  finalized: "default",
-  void: "destructive",
-};
-
-// Matches DESIGN.md's financial status colors: Paid = success green,
-// Partially Paid = warning gold-orange, Unpaid = neutral outline.
-const paymentStatusClassName: Record<PurchasePaymentStatus, string> = {
-  unpaid: "",
-  partial: "border-transparent bg-warning text-warning-foreground",
-  paid: "border-transparent bg-success text-success-foreground",
-};
-
-const paymentStatusLabel: Record<PurchasePaymentStatus, string> = {
-  unpaid: "Unpaid",
-  partial: "Partially Paid",
-  paid: "Paid",
-};
-
-export function PurchasesList({ supplierId, purchases }: { supplierId: string; purchases: Purchase[] }) {
+export function PurchasesList({
+  supplierId,
+  supplier,
+  purchases,
+  businessInfo,
+  invoiceSettings,
+}: {
+  supplierId: string;
+  supplier: Supplier;
+  purchases: Purchase[];
+  businessInfo: BusinessSettings;
+  invoiceSettings: InvoiceSettings;
+}) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,46 +67,99 @@ export function PurchasesList({ supplierId, purchases }: { supplierId: string; p
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Payment</TableHead>
+                <TableHead>Item Name</TableHead>
+                <TableHead>Rate</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Total Amount</TableHead>
+                <TableHead>Save Bill</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {purchases.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
                     No purchases yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                purchases.map((purchase) => (
-                  <TableRow key={purchase.id}>
-                    <TableCell className="font-medium text-foreground">
+                purchases.flatMap((purchase) => {
+                  const rowCount = Math.max(purchase.lineItems.length, 1);
+                  const dateCell = (
+                    <TableCell key="date" className="font-medium text-foreground align-top" rowSpan={rowCount}>
                       <Link
                         href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
                         className="hover:underline"
                       >
                         {formatDate(purchase.purchaseDate)}
                       </Link>
-                    </TableCell>
-                    <TableCell>{formatAmount(purchase.subtotal)}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant[purchase.status]} className="capitalize">
-                        {purchase.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {purchase.status === "finalized" ? (
-                        <Badge className={paymentStatusClassName[getPurchasePaymentStatus(purchase)]}>
-                          {paymentStatusLabel[getPurchasePaymentStatus(purchase)]}
+                      {purchase.status !== "finalized" ? (
+                        <Badge
+                          variant={purchase.status === "void" ? "destructive" : "secondary"}
+                          className="ml-2 capitalize"
+                        >
+                          {purchase.status}
                         </Badge>
+                      ) : null}
+                    </TableCell>
+                  );
+                  const totalCell = (
+                    <TableCell key="total" className="align-top" rowSpan={rowCount}>
+                      {formatAmount(purchase.subtotal)}
+                    </TableCell>
+                  );
+                  const actionCell = (
+                    <TableCell key="action" className="align-top" rowSpan={rowCount}>
+                      {purchase.status === "finalized" ? (
+                        <WhatsAppShareButtons
+                          fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
+                          whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
+                          whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
+                        >
+                          <PurchaseInvoiceTemplate
+                            purchase={purchase}
+                            supplier={supplier}
+                            businessInfo={businessInfo}
+                            invoiceSettings={invoiceSettings}
+                          />
+                        </WhatsAppShareButtons>
                       ) : (
-                        "—"
+                        <Link
+                          href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
+                          className="text-sm text-primary hover:underline"
+                        >
+                          {purchase.status === "draft" ? "Continue editing" : "View"}
+                        </Link>
                       )}
                     </TableCell>
-                  </TableRow>
-                ))
+                  );
+
+                  if (purchase.lineItems.length === 0) {
+                    return (
+                      <TableRow key={purchase.id}>
+                        {dateCell}
+                        <TableCell className="text-muted-foreground">No items yet</TableCell>
+                        <TableCell>—</TableCell>
+                        <TableCell>—</TableCell>
+                        {totalCell}
+                        {actionCell}
+                      </TableRow>
+                    );
+                  }
+
+                  return purchase.lineItems.map((line, index) => (
+                    <TableRow key={`${purchase.id}-${line.itemId}-${index}`}>
+                      {index === 0 ? dateCell : null}
+                      <TableCell>
+                        {line.itemName}
+                        <span className="ml-1 text-xs text-muted-foreground">/{line.unit}</span>
+                      </TableCell>
+                      <TableCell>{formatAmount(line.rate)}</TableCell>
+                      <TableCell>{line.quantity}</TableCell>
+                      {index === 0 ? totalCell : null}
+                      {index === 0 ? actionCell : null}
+                    </TableRow>
+                  ));
+                })
               )}
             </TableBody>
           </Table>
