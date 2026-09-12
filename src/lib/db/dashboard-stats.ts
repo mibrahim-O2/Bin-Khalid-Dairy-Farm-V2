@@ -19,6 +19,7 @@ export type DashboardStats = {
   supplierPayable: number;
   activeEmployees: number;
   employeeNetOwed: number;
+  milkVolumeToday: number;
   milkVolumeThisMonth: number;
   milkRevenueThisMonth: number;
   purchasesThisMonth: number;
@@ -34,6 +35,14 @@ function currentMonthRange(): { start: Date; end: Date } {
   return { start, end };
 }
 
+/** [start, end) for today (UTC calendar day), same reasoning as currentMonthRange(). */
+function todayRange(): { start: Date; end: Date } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return { start, end };
+}
+
 /**
  * Every number here is a live, uncached query at request time — no
  * denormalized "dashboard totals" row to keep in sync, since the app's
@@ -43,6 +52,7 @@ function currentMonthRange(): { start: Date; end: Date } {
 export async function getDashboardStats(): Promise<DashboardStats> {
   const db = getDb();
   const { start, end } = currentMonthRange();
+  const { start: todayStart, end: todayEnd } = todayRange();
 
   // "Outstanding"/"payable" only counts positive balances — a customer or
   // supplier sitting on a credit (rare, e.g. an overpayment) isn't netted
@@ -56,6 +66,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     [supplierAgg],
     [employeeAgg],
     [milkAgg],
+    [milkTodayAgg],
     [purchaseAgg],
     [paymentAgg],
   ] = await Promise.all([
@@ -87,6 +98,18 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         )
       ),
     db
+      .select({ volume: sql<string>`coalesce(sum(${billLineItems.totalQty}), 0)` })
+      .from(billLineItems)
+      .innerJoin(bills, eq(bills.id, billLineItems.billId))
+      .where(
+        and(
+          eq(bills.status, "finalized"),
+          eq(billLineItems.billingType, "milk"),
+          gte(bills.finalizedAt, todayStart),
+          lt(bills.finalizedAt, todayEnd)
+        )
+      ),
+    db
       .select({ total: sql<string>`coalesce(sum(${purchases.subtotal}), 0)` })
       .from(purchases)
       .where(and(eq(purchases.status, "finalized"), gte(purchases.finalizedAt, start), lt(purchases.finalizedAt, end))),
@@ -103,6 +126,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     supplierPayable: toNumber(supplierAgg.payable),
     activeEmployees: Number(employeeAgg.count),
     employeeNetOwed: toNumber(employeeAgg.netOwed),
+    milkVolumeToday: toNumber(milkTodayAgg.volume),
     milkVolumeThisMonth: toNumber(milkAgg.volume),
     milkRevenueThisMonth: toNumber(milkAgg.revenue),
     purchasesThisMonth: toNumber(purchaseAgg.total),
