@@ -1,6 +1,8 @@
 import "server-only";
 import { toNumber } from "@/lib/money";
 import type {
+  animalCategories,
+  animals,
   authorizedPeople,
   billLineItems,
   bills,
@@ -31,6 +33,7 @@ import type { AuthorizedPerson, Employee, EmployeeLedgerTransaction } from "@/ty
 import type { EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
 import type { EmployeeSalaryAccrual } from "@/types/salary-accrual";
 import type { EmployeeStatement } from "@/types/employee-statement";
+import type { Animal, AnimalCategory } from "@/types/livestock";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
 // objects) into the exact TS shape every existing component already
@@ -357,5 +360,40 @@ export function toBill(row: typeof bills.$inferSelect, lineItemRows: (typeof bil
     voidReason: row.voidReason,
     replacesBillId: row.replacesBillId,
     replacedByBillId: row.replacedByBillId,
+  };
+}
+
+export function toAnimalCategory(row: typeof animalCategories.$inferSelect): AnimalCategory {
+  return {
+    id: row.id,
+    name: row.name,
+    topLevelGroup: row.topLevelGroup,
+    active: row.active,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toAnimal(
+  row: typeof animals.$inferSelect,
+  category: Pick<typeof animalCategories.$inferSelect, "name" | "topLevelGroup">
+): Animal {
+  return {
+    id: row.id,
+    categoryId: row.categoryId,
+    categoryName: category.name,
+    categoryTopLevelGroup: category.topLevelGroup,
+    name: row.name,
+    gender: row.gender,
+    acquisitionDate: row.acquisitionDate,
+    status: row.status,
+    saleDate: row.saleDate,
+    salePrice: row.salePrice !== null ? toNumber(row.salePrice) : null,
+    deceasedDate: row.deceasedDate,
+    deceasedNote: row.deceasedNote,
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+    updatedAt: row.updatedAt.toISOString(),
+    updatedBy: row.updatedByUid ?? "",
   };
 }
