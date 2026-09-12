@@ -3,6 +3,7 @@ import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { SupplierLedgerTransaction } from "@/types/supplier";
 import type { SupplierStatement } from "@/types/supplier-statement";
+import type { Purchase } from "@/types/purchase";
 import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
 
 const BRAND_GREEN = "#1B4332";
@@ -24,13 +25,24 @@ const typeLabels: Record<SupplierLedgerTransaction["type"], string> = {
  * money to the farm, not relevant to what the farm owes a supplier).
  * English-only throughout, per the redesigned bilingual scope — see
  * bill-invoice-template.tsx's doc comment.
+ *
+ * Purchases get itemized (Date/Item Name/Rate/Quantity/Total Amount) using
+ * their own line items, same structure as the Purchases list — but with no
+ * "Save Bill" column: this is a rasterized PNG, and a button can't exist
+ * inside a static image. Everything else (payments, opening balance,
+ * voided purchases) has no per-item shape to itemize, so it's listed
+ * separately below in a plain Date/Type/Note/Debit/Credit table.
  */
 export function SupplierStatementTemplate({
   statement,
+  purchaseEntries,
+  otherEntries,
   businessInfo,
   invoiceSettings,
 }: {
   statement: SupplierStatement;
+  purchaseEntries: { transaction: SupplierLedgerTransaction; purchase: Purchase }[];
+  otherEntries: SupplierLedgerTransaction[];
   businessInfo: BusinessSettings;
   invoiceSettings: InvoiceSettings;
 }) {
@@ -71,40 +83,105 @@ export function SupplierStatementTemplate({
         </div>
       </div>
 
-      <table className="w-full table-fixed text-sm">
-        <colgroup>
-          <col className="w-[20%]" />
-          <col className="w-[35%]" />
-          <col className="w-[22%]" />
-          <col className="w-[23%]" />
-        </colgroup>
-        <thead>
-          <tr className="border-b-2 border-neutral-900 text-left">
-            <th className="py-2 font-normal">Date</th>
-            <th className="py-2 font-normal">Type</th>
-            <th className="py-2 text-right font-normal">Debit</th>
-            <th className="py-2 text-right font-normal">Credit</th>
-          </tr>
-        </thead>
-        <tbody>
-          {statement.transactions.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="py-4 text-center text-neutral-400">
-                No transactions in this period.
-              </td>
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Purchases</p>
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[34%]" />
+            <col className="w-[16%]" />
+            <col className="w-[14%]" />
+            <col className="w-[20%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b-2 border-neutral-900 text-left">
+              <th className="py-2 font-normal">Date</th>
+              <th className="py-2 font-normal">Item Name</th>
+              <th className="py-2 text-right font-normal">Rate</th>
+              <th className="py-2 text-right font-normal">Quantity</th>
+              <th className="py-2 text-right font-normal">Total Amount</th>
             </tr>
-          ) : (
-            statement.transactions.map((entry) => (
-              <tr key={entry.id} className="border-b border-neutral-100 align-top">
-                <td className="py-2">{formatDate(entry.createdAt)}</td>
-                <td className="py-2 break-words">{typeLabels[entry.type]}</td>
-                <td className="py-2 text-right">{entry.direction === "debit" ? formatAmount(entry.amount) : "—"}</td>
-                <td className="py-2 text-right">{entry.direction === "credit" ? formatAmount(entry.amount) : "—"}</td>
+          </thead>
+          <tbody>
+            {purchaseEntries.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-4 text-center text-neutral-400">
+                  No purchases in this period.
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              purchaseEntries.flatMap(({ transaction, purchase }) => {
+                const lines = purchase.lineItems.length > 0 ? purchase.lineItems : null;
+                if (!lines) {
+                  return (
+                    <tr key={transaction.id} className="border-b border-neutral-100 align-top">
+                      <td className="py-2">{formatDate(transaction.createdAt)}</td>
+                      <td className="py-2 text-neutral-400">No items</td>
+                      <td className="py-2 text-right">—</td>
+                      <td className="py-2 text-right">—</td>
+                      <td className="py-2 text-right font-medium">{formatAmount(purchase.subtotal)}</td>
+                    </tr>
+                  );
+                }
+                return lines.map((line, index) => (
+                  <tr key={`${transaction.id}-${line.itemId}-${index}`} className="border-b border-neutral-100 align-top">
+                    <td className="py-2">{index === 0 ? formatDate(transaction.createdAt) : ""}</td>
+                    <td className="py-2 break-words">
+                      {line.itemName}
+                      <span className="ml-1 text-xs text-neutral-500">/{line.unit}</span>
+                    </td>
+                    <td className="py-2 text-right">{formatAmount(line.rate)}</td>
+                    <td className="py-2 text-right">{line.quantity}</td>
+                    <td className="py-2 text-right font-medium">
+                      {index === 0 ? formatAmount(purchase.subtotal) : ""}
+                    </td>
+                  </tr>
+                ));
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+          Payments &amp; other entries
+        </p>
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[35%]" />
+            <col className="w-[22%]" />
+            <col className="w-[23%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b-2 border-neutral-900 text-left">
+              <th className="py-2 font-normal">Date</th>
+              <th className="py-2 font-normal">Type</th>
+              <th className="py-2 text-right font-normal">Debit</th>
+              <th className="py-2 text-right font-normal">Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {otherEntries.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="py-4 text-center text-neutral-400">
+                  None in this period.
+                </td>
+              </tr>
+            ) : (
+              otherEntries.map((entry) => (
+                <tr key={entry.id} className="border-b border-neutral-100 align-top">
+                  <td className="py-2">{formatDate(entry.createdAt)}</td>
+                  <td className="py-2 break-words">{typeLabels[entry.type]}</td>
+                  <td className="py-2 text-right">{entry.direction === "debit" ? formatAmount(entry.amount) : "—"}</td>
+                  <td className="py-2 text-right">{entry.direction === "credit" ? formatAmount(entry.amount) : "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div className="flex flex-col gap-1.5 self-end text-sm sm:w-72">
         <div className="flex justify-between gap-4">
