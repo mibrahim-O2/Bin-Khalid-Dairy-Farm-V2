@@ -15,9 +15,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { voidBill } from "../actions";
+import { deleteBill } from "../actions";
 
-export function VoidBillDialog({ billId, customerId }: { billId: string; customerId: string }) {
+/** Owner-only — see deleteBill's doc comment for why this replaced Void. */
+export function DeleteBillDialog({
+  billId,
+  customerId,
+}: {
+  billId: string;
+  customerId: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -27,13 +34,9 @@ export function VoidBillDialog({ billId, customerId }: { billId: string; custome
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!reason.trim()) {
-      setError("A reason is required.");
-      return;
-    }
     setSaving(true);
     setError(null);
-    const result = await voidBill({ billId, reason: reason.trim(), createReplacement });
+    const result = await deleteBill({ billId, reason: reason.trim() || undefined, createReplacement });
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -43,30 +46,33 @@ export function VoidBillDialog({ billId, customerId }: { billId: string; custome
     if (result.replacementBillId) {
       router.push(`/dashboard/customers/${customerId}/bills/${result.replacementBillId}`);
     } else {
-      router.refresh();
+      // Full navigation, not router.push — this dialog is used both from
+      // the bill editor page and from the Ledger itself, and a push to a
+      // route we may already be on won't force a re-fetch of the now-
+      // stale Router Cache.
+      window.location.assign(`/dashboard/customers/${customerId}/ledger`);
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline">Void bill</Button>} />
+      <DialogTrigger render={<Button variant="destructive">Delete bill</Button>} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Void this bill</DialogTitle>
+          <DialogTitle>Delete this bill?</DialogTitle>
           <DialogDescription>
-            This never deletes or edits the finalized amounts — it records a reversing credit and
-            marks the bill void, permanently.
+            This permanently removes this bill and its amount from the ledger and database. This
+            cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="void-reason">Reason</Label>
+            <Label htmlFor="delete-bill-reason">Reason (optional)</Label>
             <Textarea
-              id="void-reason"
+              id="delete-bill-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
-              required
             />
           </div>
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
@@ -81,7 +87,7 @@ export function VoidBillDialog({ billId, customerId }: { billId: string; custome
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={saving}>
-              Void bill
+              Yes, delete bill
             </Button>
           </DialogFooter>
         </form>
