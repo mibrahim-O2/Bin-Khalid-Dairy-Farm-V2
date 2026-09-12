@@ -27,6 +27,13 @@ export const customers = pgTable("customers", {
   // predate this column; migration 0004 backfills every one of them from
   // `created_at` at the time it was added.
   joiningDate: date("joining_date"),
+  // The customer's current standard daily milk quantity — admin-editable
+  // at any time via the same Edit Details flow as name/phone/address
+  // (unlike joiningDate, this legitimately changes over time). Used as a
+  // smart default for the "Daily Milk" field when adding a Milk line item
+  // to a new bill (still freely editable per-bill), and as the live
+  // "Daily Milk Quantity" column in the Milk Record module.
+  dailyMilkQty: numeric("daily_milk_qty", { precision: 12, scale: 2 }),
   // Soft-delete flag. Customers are archived, never hard-deleted (the
   // Owner-only full-purge delete is a separate, deliberate exception — see
   // the M5 delete-customer Server Action, not this flag).
@@ -117,7 +124,31 @@ export const customerMilkPauses = pgTable("customer_milk_pauses", {
   // Null while the customer is still paused — filled in once they restart.
   resumeDate: date("resume_date"),
   dailyMilkQtyAtPause: numeric("daily_milk_qty_at_pause", { precision: 12, scale: 2 }),
+  // Null means a full stop (Milk Missed = dailyMilkQtyAtPause × days). Set
+  // when the customer didn't fully stop — e.g. reduced from 3L/day to
+  // 1L/day — in which case Milk Missed is the DIFFERENCE
+  // (dailyMilkQtyAtPause − reducedDailyQty) × days, not the full amount.
+  reducedDailyQty: numeric("reduced_daily_qty", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdByUid: text("created_by_uid"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("ix_customer_milk_pauses_customer").on(t.customerId)]).enableRLS();
+
+/**
+ * One row per date a customer took extra milk beyond their standard daily
+ * quantity — the Milk Record module. Purely informational, same as
+ * customerMilkPauses, EXCEPT it also feeds a smart default: when a new
+ * bill's period overlaps one of these dates, its quantity is summed into
+ * that bill's "Extra Milk Added" field (still freely editable per-bill).
+ */
+export const customerExtraMilk = pgTable("customer_extra_milk", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: text("customer_id")
+    .notNull()
+    .references(() => customers.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdByUid: text("created_by_uid"),
+}, (t) => [index("ix_customer_extra_milk_customer").on(t.customerId)]).enableRLS();
