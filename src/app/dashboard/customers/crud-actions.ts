@@ -22,6 +22,7 @@ const customerInputSchema = z.object({
   phone: z.string().trim().max(50).optional(),
   whatsappNumber: z.string().trim().max(50).optional(),
   address: z.string().trim().max(500).optional(),
+  dailyMilkQty: z.number().min(0).optional(),
 });
 
 export async function createCustomer(
@@ -36,7 +37,7 @@ export async function createCustomer(
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { name, phone, whatsappNumber, address } = parsed.data;
+  const { name, phone, whatsappNumber, address, dailyMilkQty } = parsed.data;
 
   const id = randomUUID();
   try {
@@ -48,6 +49,7 @@ export async function createCustomer(
         phone: phone || null,
         whatsappNumber: whatsappNumber || null,
         address: address || null,
+        dailyMilkQty: dailyMilkQty !== undefined ? String(dailyMilkQty) : null,
         // Set once, here, at creation — never edited afterward (see the
         // Milk Record module). Today's date in the server's local
         // calendar day, not a timestamp.
@@ -78,7 +80,7 @@ export async function updateCustomer(input: z.infer<typeof updateCustomerSchema>
   if (!parsed.success) {
     return { ok: false, error: "Name is required." };
   }
-  const { customerId, name, phone, whatsappNumber, address } = parsed.data;
+  const { customerId, name, phone, whatsappNumber, address, dailyMilkQty } = parsed.data;
 
   try {
     await getDb()
@@ -88,6 +90,7 @@ export async function updateCustomer(input: z.infer<typeof updateCustomerSchema>
         phone: phone || null,
         whatsappNumber: whatsappNumber || null,
         address: address || null,
+        dailyMilkQty: dailyMilkQty !== undefined ? String(dailyMilkQty) : null,
         updatedAt: new Date(),
       })
       .where(eq(customers.id, customerId));
