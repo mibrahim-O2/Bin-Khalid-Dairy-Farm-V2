@@ -36,8 +36,8 @@ import {
   type PurchaseStatus,
 } from "@/types/purchase";
 import type { FarmSupplyItem, Supplier } from "@/types/supplier";
-import { finalizePurchase, updateDraftPurchase } from "../actions";
-import { VoidPurchaseDialog } from "./void-purchase-dialog";
+import { finalizePurchase, updateDraftPurchase, updateFinalizedPurchase } from "../actions";
+import { DeletePurchaseDialog } from "./delete-purchase-dialog";
 
 const statusVariant: Record<PurchaseStatus, "default" | "secondary" | "destructive"> = {
   draft: "secondary",
@@ -62,11 +62,13 @@ export function PurchaseEditorClient({
   purchase,
   supplier,
   items,
+  isOwner,
 }: {
   supplierId: string;
   purchase: Purchase | null;
   supplier: Supplier | null;
   items: FarmSupplyItem[];
+  isOwner: boolean;
 }) {
   const router = useRouter();
 
@@ -74,6 +76,10 @@ export function PurchaseEditorClient({
   const [lineItems, setLineItems] = useState<PurchaseLineItem[]>(purchase?.lineItems ?? []);
   const [note, setNote] = useState(purchase?.note ?? "");
   const [selectedItemId, setSelectedItemId] = useState("");
+  // Owner-only correction mode for an already-finalized purchase — see
+  // updateFinalizedPurchase's doc comment. Off by default even for the
+  // Owner, so a finalized purchase still reads as read-only at a glance.
+  const [ownerEditing, setOwnerEditing] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -153,6 +159,34 @@ export function PurchaseEditorClient({
       setError(result.error);
       return;
     }
+    // Lands in the Supplier Ledger, not back on this page — there's no
+    // separate Purchases list anymore, and the ledger is where this
+    // purchase now shows up alongside everything else.
+    router.push(`/dashboard/suppliers/${supplierId}/ledger`);
+  }
+
+  async function handleSaveFinalizedEdit() {
+    if (!purchase) return;
+    setSaving(true);
+    setError(null);
+    const result = await updateFinalizedPurchase({
+      purchaseId: purchase.id,
+      purchaseDate,
+      lineItems: computedLines.map(({ itemId, itemName, unit, rate, quantity }) => ({
+        itemId,
+        itemName,
+        unit,
+        rate,
+        quantity,
+      })),
+      note: note.trim() || undefined,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOwnerEditing(false);
     router.refresh();
   }
 
@@ -171,6 +205,9 @@ export function PurchaseEditorClient({
   }
 
   const isDraft = purchase.status === "draft";
+  // Owner-only correction of an already-finalized purchase reuses this
+  // same draft-editing UI — see ownerEditing's declaration above.
+  const isEditable = isDraft || ownerEditing;
 
   return (
     <div className="flex flex-col gap-6">
@@ -229,7 +266,7 @@ export function PurchaseEditorClient({
               id="purchase-date"
               type="date"
               value={purchaseDate}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setPurchaseDate(e.target.value)}
             />
           </div>
@@ -241,7 +278,7 @@ export function PurchaseEditorClient({
           <CardTitle>Line items</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {isDraft ? (
+          {isEditable ? (
             <div className="flex flex-wrap items-end gap-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="add-item">Add item</Label>
@@ -272,13 +309,13 @@ export function PurchaseEditorClient({
                   <TableHead>Rate</TableHead>
                   <TableHead>Quantity</TableHead>
                   <TableHead>Line total</TableHead>
-                  {isDraft ? <TableHead className="text-right">Actions</TableHead> : null}
+                  {isEditable ? <TableHead className="text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {computedLines.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isDraft ? 5 : 4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={isEditable ? 5 : 4} className="text-center text-muted-foreground">
                       No line items yet.
                     </TableCell>
                   </TableRow>
@@ -290,7 +327,7 @@ export function PurchaseEditorClient({
                         <span className="ml-1 text-xs text-muted-foreground">/{line.unit}</span>
                       </TableCell>
                       <TableCell>
-                        {isDraft ? (
+                        {isEditable ? (
                           <Input
                             type="number"
                             min="0"
@@ -305,7 +342,7 @@ export function PurchaseEditorClient({
                         )}
                       </TableCell>
                       <TableCell>
-                        {isDraft ? (
+                        {isEditable ? (
                           <Input
                             type="number"
                             min="0"
@@ -322,7 +359,7 @@ export function PurchaseEditorClient({
                         )}
                       </TableCell>
                       <TableCell>{formatAmount(line.lineTotal)}</TableCell>
-                      {isDraft ? (
+                      {isEditable ? (
                         <TableCell className="text-right">
                           <Button
                             type="button"
@@ -346,7 +383,7 @@ export function PurchaseEditorClient({
             <Textarea
               id="note"
               value={note}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
             />
@@ -360,9 +397,9 @@ export function PurchaseEditorClient({
         </CardHeader>
         <CardContent className="flex flex-col gap-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
+            <span className="text-muted-foreground">Subtotal{ownerEditing ? " (preview)" : ""}</span>
             <span className="font-medium text-foreground">
-              {formatAmount(isDraft ? subtotal : purchase.subtotal)}
+              {formatAmount(isEditable ? subtotal : purchase.subtotal)}
             </span>
           </div>
           <div className="flex justify-between">
@@ -380,10 +417,14 @@ export function PurchaseEditorClient({
             </div>
           ) : null}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
-            <span className="font-medium text-foreground">Total payable</span>
+            <span className="font-medium text-foreground">Total payable{ownerEditing ? " (preview)" : ""}</span>
             <span className="font-heading font-bold text-foreground">
               {formatAmount(
-                isDraft ? subtotal + supplier.balance : (purchase.totalPayable ?? purchase.subtotal)
+                isDraft
+                  ? subtotal + supplier.balance
+                  : ownerEditing
+                    ? subtotal + (purchase.previousBalance ?? 0)
+                    : (purchase.totalPayable ?? purchase.subtotal)
               )}
             </span>
           </div>
@@ -414,8 +455,24 @@ export function PurchaseEditorClient({
             </Button>
           </>
         ) : null}
-        {purchase.status === "finalized" ? (
-          <VoidPurchaseDialog purchaseId={purchase.id} supplierId={supplierId} />
+        {purchase.status === "finalized" && isOwner ? (
+          ownerEditing ? (
+            <>
+              <Button variant="outline" disabled={saving} onClick={() => setOwnerEditing(false)}>
+                Cancel
+              </Button>
+              <Button disabled={saving || computedLines.length === 0} onClick={handleSaveFinalizedEdit}>
+                Save changes
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={() => setOwnerEditing(true)}>
+              Edit
+            </Button>
+          )
+        ) : null}
+        {purchase.status === "finalized" && isOwner ? (
+          <DeletePurchaseDialog purchaseId={purchase.id} supplierId={supplierId} />
         ) : null}
       </div>
     </div>
