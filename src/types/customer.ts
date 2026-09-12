@@ -11,6 +11,8 @@ export type Customer = {
   address: string | null;
   /** Set once at creation, never edited afterward — see the Milk Record module. yyyy-mm-dd. */
   joiningDate: string | null;
+  /** Current standard daily milk quantity — freely editable, unlike joiningDate. Smart default for a new bill's Milk line item. */
+  dailyMilkQty: number | null;
   /** Soft-delete flag. Customers are archived, never hard-deleted. */
   active: boolean;
   /** Cached Σdebits − Σcredits. Only ever written inside the same server-side
@@ -36,6 +38,23 @@ export type CustomerMilkPause = {
   pauseDate: string; // yyyy-mm-dd
   resumeDate: string | null; // yyyy-mm-dd — null while still paused
   dailyMilkQtyAtPause: number | null;
+  /** Null = full stop. Set = customer reduced to this quantity instead of stopping entirely. */
+  reducedDailyQty: number | null;
+  createdAt: string;
+  createdBy: string;
+};
+
+/**
+ * One date a customer took extra milk beyond their standard quantity — the
+ * Milk Record module. Feeds a new bill's "Extra Milk Added" smart default
+ * when the bill's period overlaps `date`.
+ */
+export type CustomerExtraMilk = {
+  id: string;
+  customerId: string;
+  date: string; // yyyy-mm-dd
+  quantity: number;
+  note: string | null;
   createdAt: string;
   createdBy: string;
 };
