@@ -23,12 +23,17 @@ export function WhatsAppShareButtons({
   fileName,
   whatsappNumber,
   whatsappMessage,
+  saveLabel = "Save",
+  whatsappLabel = "Send via WhatsApp",
 }: {
   children: ReactNode;
   fileName: string;
   /** No WhatsApp number on file for this customer/supplier/employee — hide that button, Save still works. */
   whatsappNumber: string | null;
   whatsappMessage: string;
+  /** Override the button copy for a specific document type (e.g. "Save Bill", "Share on WhatsApp") — defaults match every existing call site. */
+  saveLabel?: string;
+  whatsappLabel?: string;
 }) {
   const targetRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<"save" | "whatsapp" | null>(null);
@@ -73,12 +78,12 @@ export function WhatsAppShareButtons({
         {whatsappNumber ? (
           <Button variant="outline" size="sm" disabled={!!busy} onClick={handleWhatsApp}>
             <MessageCircle className="size-4" />
-            {busy === "whatsapp" ? "Preparing…" : "Send via WhatsApp"}
+            {busy === "whatsapp" ? "Preparing…" : whatsappLabel}
           </Button>
         ) : null}
         <Button variant="outline" size="sm" disabled={!!busy} onClick={handleSave}>
           <Download className="size-4" />
-          {busy === "save" ? "Preparing…" : "Save"}
+          {busy === "save" ? "Preparing…" : saveLabel}
         </Button>
       </div>
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
