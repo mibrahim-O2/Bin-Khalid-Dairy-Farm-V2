@@ -68,13 +68,20 @@ export default async function DashboardPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               This month
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <StatCard
+                label="Milk Volume — Today"
+                value={`${formatAmount(stats.milkVolumeToday)} L`}
+                sublabel="Litres billed today"
+                icon={Milk}
+                delayMs={0}
+              />
               <StatCard
                 label="Milk Revenue"
                 value={formatAmount(stats.milkRevenueThisMonth)}
-                sublabel={`${formatAmount(stats.milkVolumeThisMonth)} litres billed`}
+                sublabel={`${formatAmount(stats.milkVolumeThisMonth)} litres billed this month`}
                 icon={Milk}
-                delayMs={0}
+                delayMs={30}
               />
               <StatCard
                 label="Payments Received"
