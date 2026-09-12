@@ -3,10 +3,10 @@
 // Employee statements, fully on Postgres (M12) — no Firestore involvement.
 
 import { z } from "zod";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
-import { employeeLedgerTransactions, employeeStatements, employees } from "@/lib/db/schema";
+import { employeeLedgerTransactions, employeeSalaryAccruals, employeeStatements, employees } from "@/lib/db/schema";
 import { toEmployeeLedgerTransaction } from "@/lib/db/mappers";
 import { isoDateSchema } from "@/lib/zod-date";
 
@@ -61,19 +61,57 @@ export async function generateEmployeeStatement(input: {
       .where(eq(employeeLedgerTransactions.employeeId, employeeId))
       .orderBy(asc(employeeLedgerTransactions.createdAt));
 
+    // Same fix as generateSupplierStatement: a salary accrual's
+    // `createdAt` is when the record was entered, not the payroll period
+    // it actually covers — backfilled/late-entered accruals would
+    // otherwise silently fall outside a date-range statement that should
+    // include them. Use the accrual's own `periodEnd` as its effective
+    // date; payment entries have no separate date of their own, so
+    // createdAt remains correct for those.
+    const accrualIds = allTransactionRows
+      .map((row) => row.accrualId)
+      .filter((id): id is string => id !== null);
+    const periodEndById = new Map<string, string>();
+    if (accrualIds.length > 0) {
+      const accrualRows = await db
+        .select({ id: employeeSalaryAccruals.id, periodEnd: employeeSalaryAccruals.periodEnd })
+        .from(employeeSalaryAccruals)
+        .where(inArray(employeeSalaryAccruals.id, accrualIds));
+      for (const a of accrualRows) periodEndById.set(a.id, a.periodEnd);
+    }
+
+    function effectiveDateIso(row: (typeof allTransactionRows)[number], createdAtIso: string): string {
+      if (row.accrualId) {
+        const periodEnd = periodEndById.get(row.accrualId);
+        if (periodEnd) return `${periodEnd}T12:00:00.000Z`;
+      }
+      return createdAtIso;
+    }
+
     const startIso = `${startDate}T00:00:00.000Z`;
     const endIso = `${endDate}T23:59:59.999Z`;
 
     let openingBalance = 0;
     const transactionsInRange = [];
 
-    for (const row of allTransactionRows) {
-      const entry = toEmployeeLedgerTransaction(row);
+    const sortedRows = allTransactionRows
+      .map((row) => ({ row, entry: toEmployeeLedgerTransaction(row) }))
+      .map(({ row, entry }) => ({ entry, effectiveDate: effectiveDateIso(row, entry.createdAt) }))
+      .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+
+    for (const { entry, effectiveDate } of sortedRows) {
       const delta = entry.direction === "credit" ? entry.amount : -entry.amount;
-      if (entry.createdAt < startIso) {
+      // opening_balance represents whatever was owed BEFORE this ledger
+      // started tracking anything — always part of "opening", regardless
+      // of when the row itself was created.
+      if (entry.type === "opening_balance") {
         openingBalance += delta;
-      } else if (entry.createdAt <= endIso) {
-        transactionsInRange.push(entry);
+      } else if (effectiveDate < startIso) {
+        openingBalance += delta;
+      } else if (effectiveDate <= endIso) {
+        // Show the date this transaction actually represents (the
+        // accrual's period end), not when the record was entered.
+        transactionsInRange.push({ ...entry, createdAt: effectiveDate });
       }
     }
 
