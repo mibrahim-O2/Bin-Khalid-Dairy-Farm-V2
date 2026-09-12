@@ -32,6 +32,7 @@ import { getBillPaymentStatus, type Bill, type BillLineItem, type BillPaymentSta
 import type { Customer, CustomerRate, Product } from "@/types/customer";
 import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
 import { finalizeBill, updateDraftBill } from "../actions";
+import { getMilkAutoFillDefaults } from "../../../../milk-record/actions";
 import { VoidBillDialog } from "./void-bill-dialog";
 import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
@@ -114,35 +115,58 @@ export function BillEditorClient({
     (product) => !lineItems.some((line) => line.productId === product.id)
   );
 
-  function addLineItem() {
+  const [addingLine, setAddingLine] = useState(false);
+
+  async function addLineItem() {
     const product = products.find((p) => p.id === selectedProductId);
     if (!product) return;
     const rate = ratesByProductId[product.id]?.rate ?? product.defaultRate;
-    const newLine: BillLineItem =
-      product.billingType === "milk"
-        ? {
-            productId: product.id,
-            productName: product.name,
-            unit: product.unit,
-            billingType: "milk",
-            rate,
-            dailyQty: 0,
-            extra: 0,
-            less: 0,
-            totalQty: 0,
-            lineTotal: 0,
-          }
-        : {
-            productId: product.id,
-            productName: product.name,
-            unit: product.unit,
-            billingType: "simple",
-            rate,
-            quantity: 0,
-            totalQty: 0,
-            lineTotal: 0,
-          };
-    setLineItems((current) => [...current, newLine]);
+
+    if (product.billingType === "milk") {
+      // Smart defaults from the customer's stored daily quantity plus any
+      // recorded extra-milk/pause history overlapping this bill's period
+      // (Milk Record module) — still freely editable below, this just
+      // saves re-typing the common case. Falls back to zeros if the
+      // period isn't set yet or the lookup fails for any reason.
+      let dailyQty = 0;
+      let extra = 0;
+      let less = 0;
+      if (startDate && endDate) {
+        setAddingLine(true);
+        const defaults = await getMilkAutoFillDefaults({ customerId, startDate, endDate });
+        setAddingLine(false);
+        if (defaults.ok) {
+          dailyQty = defaults.dailyQty;
+          extra = defaults.extra;
+          less = defaults.less;
+        }
+      }
+      const newLine: BillLineItem = {
+        productId: product.id,
+        productName: product.name,
+        unit: product.unit,
+        billingType: "milk",
+        rate,
+        dailyQty,
+        extra,
+        less,
+        totalQty: 0,
+        lineTotal: 0,
+      };
+      setLineItems((current) => [...current, newLine]);
+    } else {
+      const newLine: BillLineItem = {
+        productId: product.id,
+        productName: product.name,
+        unit: product.unit,
+        billingType: "simple",
+        rate,
+        quantity: 0,
+        totalQty: 0,
+        lineTotal: 0,
+      };
+      setLineItems((current) => [...current, newLine]);
+    }
     setSelectedProductId("");
   }
 
@@ -325,8 +349,8 @@ export function BillEditorClient({
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="button" variant="outline" disabled={!selectedProductId} onClick={addLineItem}>
-                Add line
+              <Button type="button" variant="outline" disabled={!selectedProductId || addingLine} onClick={addLineItem}>
+                {addingLine ? "Adding…" : "Add line"}
               </Button>
             </div>
           ) : null}
