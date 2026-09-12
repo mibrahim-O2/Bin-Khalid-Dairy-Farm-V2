@@ -18,6 +18,33 @@ import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
 import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
 import { PurchaseInvoiceTemplate } from "@/components/invoice/purchase-invoice-template";
 
+function SaveBillButtons({
+  purchase,
+  supplier,
+  businessInfo,
+  invoiceSettings,
+}: {
+  purchase: Purchase;
+  supplier: Supplier;
+  businessInfo: BusinessSettings;
+  invoiceSettings: InvoiceSettings;
+}) {
+  return (
+    <WhatsAppShareButtons
+      fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
+      whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
+      whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
+    >
+      <PurchaseInvoiceTemplate
+        purchase={purchase}
+        supplier={supplier}
+        businessInfo={businessInfo}
+        invoiceSettings={invoiceSettings}
+      />
+    </WhatsAppShareButtons>
+  );
+}
+
 /**
  * The purchase side of a supplier statement, in the same Date | Item Name |
  * Rate | Quantity | Total Amount | Save Bill structure as PurchasesList —
@@ -26,6 +53,10 @@ import { PurchaseInvoiceTemplate } from "@/components/invoice/purchase-invoice-t
  * The shareable statement *image* (SupplierStatementTemplate) can't hold a
  * button at all — it's a rasterized PNG — so it drops that column entirely
  * instead of showing a dead one.
+ *
+ * Desktop gets the real table; mobile gets one card per purchase (same
+ * dual-layout pattern as PurchasesList/LivestockTable) since 6 columns,
+ * one of them multi-line, can't fit a 390px screen.
  */
 export function StatementPurchasesTable({
   supplierId,
@@ -45,8 +76,8 @@ export function StatementPurchasesTable({
       <CardHeader>
         <CardTitle>Purchases in this period</CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+      <CardContent className="flex flex-col gap-3 p-0">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -85,18 +116,12 @@ export function StatementPurchasesTable({
                   );
                   const actionCell = (
                     <TableCell key="action" className="align-top" rowSpan={rowCount}>
-                      <WhatsAppShareButtons
-                        fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
-                        whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
-                        whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
-                      >
-                        <PurchaseInvoiceTemplate
-                          purchase={purchase}
-                          supplier={supplier}
-                          businessInfo={businessInfo}
-                          invoiceSettings={invoiceSettings}
-                        />
-                      </WhatsAppShareButtons>
+                      <SaveBillButtons
+                        purchase={purchase}
+                        supplier={supplier}
+                        businessInfo={businessInfo}
+                        invoiceSettings={invoiceSettings}
+                      />
                     </TableCell>
                   );
 
@@ -130,6 +155,43 @@ export function StatementPurchasesTable({
               )}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="flex flex-col gap-3 px-4 pb-4 md:hidden">
+          {purchaseEntries.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground">No purchases in this period.</p>
+          ) : (
+            purchaseEntries.map(({ transaction, purchase }) => (
+              <div key={transaction.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                <Link
+                  href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {formatDate(transaction.createdAt)}
+                </Link>
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                  {purchase.lineItems.length === 0 ? (
+                    <p>No items</p>
+                  ) : (
+                    purchase.lineItems.map((line, index) => (
+                      <div key={`${line.itemId}-${index}`}>
+                        {line.itemName} <span className="text-xs">/{line.unit}</span> &times; {line.quantity} @ {formatAmount(line.rate)}
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                  <span className="font-medium text-foreground">{formatAmount(purchase.subtotal)}</span>
+                  <SaveBillButtons
+                    purchase={purchase}
+                    supplier={supplier}
+                    businessInfo={businessInfo}
+                    invoiceSettings={invoiceSettings}
+                  />
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
