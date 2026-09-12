@@ -19,8 +19,10 @@ import { SalaryCard } from "./salary-card";
 import { AccrualsList } from "./accruals-list";
 import { RecordPaymentDialog } from "./record-payment-dialog";
 import { StatementsCard } from "./statements-card";
+import { DeleteEmployeeDialog } from "./delete-employee-dialog";
 
 export function EmployeeDetailClient({
+  isOwner,
   employee,
   salaryHistory,
   accruals,
@@ -28,6 +30,7 @@ export function EmployeeDetailClient({
   openingBalanceEntry,
   authorizedPeople,
 }: {
+  isOwner: boolean;
   employee: Employee | null;
   salaryHistory: EmployeeSalaryHistoryEntry[];
   accruals: EmployeeSalaryAccrual[];
@@ -85,6 +88,7 @@ export function EmployeeDetailClient({
             <Button variant="outline" size="sm" disabled={toggling} onClick={toggleActive}>
               {employee.active ? "Archive" : "Unarchive"}
             </Button>
+            {isOwner ? <DeleteEmployeeDialog employeeId={employee.id} employeeName={employee.name} /> : null}
           </div>
         </div>
       </div>
