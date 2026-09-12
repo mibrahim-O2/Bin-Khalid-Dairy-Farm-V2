@@ -23,6 +23,42 @@ import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-button
 import { PurchaseInvoiceTemplate } from "@/components/invoice/purchase-invoice-template";
 import { createDraftPurchase } from "./purchases/actions";
 
+function SaveBillOrLink({
+  purchase,
+  supplier,
+  supplierId,
+  businessInfo,
+  invoiceSettings,
+}: {
+  purchase: Purchase;
+  supplier: Supplier;
+  supplierId: string;
+  businessInfo: BusinessSettings;
+  invoiceSettings: InvoiceSettings;
+}) {
+  if (purchase.status === "finalized") {
+    return (
+      <WhatsAppShareButtons
+        fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
+        whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
+        whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
+      >
+        <PurchaseInvoiceTemplate
+          purchase={purchase}
+          supplier={supplier}
+          businessInfo={businessInfo}
+          invoiceSettings={invoiceSettings}
+        />
+      </WhatsAppShareButtons>
+    );
+  }
+  return (
+    <Link href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`} className="text-sm text-primary hover:underline">
+      {purchase.status === "draft" ? "Continue editing" : "View"}
+    </Link>
+  );
+}
+
 export function PurchasesList({
   supplierId,
   supplier,
@@ -62,7 +98,13 @@ export function PurchasesList({
           </Button>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <div className="overflow-x-auto">
+
+        {/* Desktop: real table with items rowspan-ed under their purchase.
+            Mobile: one card per purchase — 6 columns (one of them a
+            multi-line item list) can't fit 390px without unreadable
+            squeezing, so each purchase becomes its own card listing its
+            items as simple rows instead of table cells. */}
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -109,27 +151,13 @@ export function PurchasesList({
                   );
                   const actionCell = (
                     <TableCell key="action" className="align-top" rowSpan={rowCount}>
-                      {purchase.status === "finalized" ? (
-                        <WhatsAppShareButtons
-                          fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
-                          whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
-                          whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
-                        >
-                          <PurchaseInvoiceTemplate
-                            purchase={purchase}
-                            supplier={supplier}
-                            businessInfo={businessInfo}
-                            invoiceSettings={invoiceSettings}
-                          />
-                        </WhatsAppShareButtons>
-                      ) : (
-                        <Link
-                          href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
-                          className="text-sm text-primary hover:underline"
-                        >
-                          {purchase.status === "draft" ? "Continue editing" : "View"}
-                        </Link>
-                      )}
+                      <SaveBillOrLink
+                        purchase={purchase}
+                        supplier={supplier}
+                        supplierId={supplierId}
+                        businessInfo={businessInfo}
+                        invoiceSettings={invoiceSettings}
+                      />
                     </TableCell>
                   );
 
@@ -163,6 +191,53 @@ export function PurchasesList({
               )}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="flex flex-col gap-3 md:hidden">
+          {purchases.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground">No purchases yet.</p>
+          ) : (
+            purchases.map((purchase) => (
+              <div key={purchase.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <Link
+                    href={`/dashboard/suppliers/${supplierId}/purchases/${purchase.id}`}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {formatDate(purchase.purchaseDate)}
+                  </Link>
+                  {purchase.status !== "finalized" ? (
+                    <Badge variant={purchase.status === "void" ? "destructive" : "secondary"} className="capitalize">
+                      {purchase.status}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                  {purchase.lineItems.length === 0 ? (
+                    <p>No items yet</p>
+                  ) : (
+                    purchase.lineItems.map((line, index) => (
+                      <div key={`${line.itemId}-${index}`} className="flex justify-between gap-2">
+                        <span>
+                          {line.itemName} <span className="text-xs">/{line.unit}</span> &times; {line.quantity} @ {formatAmount(line.rate)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                  <span className="font-medium text-foreground">{formatAmount(purchase.subtotal)}</span>
+                  <SaveBillOrLink
+                    purchase={purchase}
+                    supplier={supplier}
+                    supplierId={supplierId}
+                    businessInfo={businessInfo}
+                    invoiceSettings={invoiceSettings}
+                  />
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
