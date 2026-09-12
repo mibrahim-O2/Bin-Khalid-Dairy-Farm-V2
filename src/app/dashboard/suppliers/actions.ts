@@ -9,7 +9,9 @@ import { z } from "zod";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import { getDb } from "@/lib/db/client";
+import { logActivity } from "@/lib/db/activity-log";
 import {
   purchases,
   supplierLedgerTransactions,
@@ -293,6 +295,79 @@ export async function voidSupplierPayment(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to void payment.",
+    };
+  }
+}
+
+const deleteSupplierSchema = z.object({
+  supplierId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * Permanently deletes a supplier AND their entire financial trail —
+ * mirrors deleteCustomer in customers/actions.ts exactly, including the
+ * same DELIBERATE, EXPLICIT exception to "never hard-delete a finalized
+ * financial record": Owner-only, requires confirmation, cascades via the
+ * ON DELETE CASCADE foreign keys on purchases/purchase line items/
+ * payments/payment allocations/supplier ledger transactions.
+ */
+export async function deleteSupplier(input: { supplierId: string; reason?: string }): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a supplier." };
+  }
+
+  const parsed = deleteSupplierSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { supplierId, reason } = parsed.data;
+
+  const db = getDb();
+
+  try {
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
+    if (!supplier) {
+      return { ok: false, error: "Supplier not found." };
+    }
+
+    // Counted before the cascade below removes them, for an accurate
+    // activity-log record of what this purge actually did.
+    const [purchaseRows, paymentRows, ledgerRows] = await Promise.all([
+      db.select().from(purchases).where(eq(purchases.supplierId, supplierId)),
+      db.select().from(supplierPayments).where(eq(supplierPayments.supplierId, supplierId)),
+      db.select().from(supplierLedgerTransactions).where(eq(supplierLedgerTransactions.supplierId, supplierId)),
+    ]);
+
+    await db.delete(suppliers).where(eq(suppliers.id, supplierId));
+
+    await logActivity({
+      action: "supplier_deleted",
+      targetType: "supplier",
+      targetId: supplierId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: {
+        supplierName: supplier.name,
+        reason: reason ?? null,
+        purgedCounts: {
+          purchases: purchaseRows.length,
+          payments: paymentRows.length,
+          ledgerTransactions: ledgerRows.length,
+        },
+      },
+    });
+
+    revalidatePath("/dashboard/suppliers");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to delete supplier.",
     };
   }
 }
