@@ -1,5 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
+import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import {
   authorizedPeople,
   employeeLedgerTransactions,
@@ -21,6 +23,8 @@ import { EmployeeDetailClient } from "./employee-detail-client";
 export default async function EmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = getDb();
+  const session = await getServerSession();
+  const isOwner = session ? isOwnerSession(session) : false;
 
   const [
     [employeeRow],
@@ -58,6 +62,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
 
   return (
     <EmployeeDetailClient
+      isOwner={isOwner}
       employee={employeeRow ? toEmployee(employeeRow) : null}
       salaryHistory={salaryHistoryRows.map(toEmployeeSalaryHistoryEntry)}
       accruals={accrualRows.map(toEmployeeSalaryAccrual)}
