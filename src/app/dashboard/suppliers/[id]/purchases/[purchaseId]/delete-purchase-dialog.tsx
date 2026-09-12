@@ -15,9 +15,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { voidPurchase } from "../actions";
+import { deletePurchase } from "../actions";
 
-export function VoidPurchaseDialog({
+/** Owner-only — see deletePurchase's doc comment for why this replaced Void. */
+export function DeletePurchaseDialog({
   purchaseId,
   supplierId,
 }: {
@@ -33,13 +34,9 @@ export function VoidPurchaseDialog({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!reason.trim()) {
-      setError("A reason is required.");
-      return;
-    }
     setSaving(true);
     setError(null);
-    const result = await voidPurchase({ purchaseId, reason: reason.trim(), createReplacement });
+    const result = await deletePurchase({ purchaseId, reason: reason.trim() || undefined, createReplacement });
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -49,30 +46,33 @@ export function VoidPurchaseDialog({
     if (result.replacementPurchaseId) {
       router.push(`/dashboard/suppliers/${supplierId}/purchases/${result.replacementPurchaseId}`);
     } else {
-      router.refresh();
+      // Full navigation, not router.push — this dialog is used both from
+      // the purchase editor page and from the Ledger itself, and a push
+      // to a route we may already be on won't force a re-fetch of the
+      // now-stale Router Cache.
+      window.location.assign(`/dashboard/suppliers/${supplierId}/ledger`);
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline">Void purchase</Button>} />
+      <DialogTrigger render={<Button variant="destructive">Delete purchase</Button>} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Void this purchase</DialogTitle>
+          <DialogTitle>Delete this purchase?</DialogTitle>
           <DialogDescription>
-            This never deletes or edits the finalized amounts — it records a reversing credit and
-            marks the purchase void, permanently.
+            This permanently removes this purchase and its amount from the ledger and database.
+            This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="void-reason">Reason</Label>
+            <Label htmlFor="delete-purchase-reason">Reason (optional)</Label>
             <Textarea
-              id="void-reason"
+              id="delete-purchase-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
-              required
             />
           </div>
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
@@ -87,7 +87,7 @@ export function VoidPurchaseDialog({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={saving}>
-              Void purchase
+              Yes, delete purchase
             </Button>
           </DialogFooter>
         </form>
