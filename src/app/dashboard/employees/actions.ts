@@ -13,7 +13,9 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import { getDb } from "@/lib/db/client";
+import { logActivity } from "@/lib/db/activity-log";
 import { employeeLedgerTransactions, employeePayments, employeeSalaryAccruals, employees } from "@/lib/db/schema";
 import { isoDateSchema } from "@/lib/zod-date";
 
@@ -421,6 +423,75 @@ export async function voidEmployeePayment(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to void payment.",
+    };
+  }
+}
+
+const deleteEmployeeSchema = z.object({
+  employeeId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * Permanently deletes an employee AND their entire financial trail —
+ * mirrors deleteCustomer/deleteSupplier exactly: Owner-only, requires
+ * confirmation, cascades via the ON DELETE CASCADE foreign keys on salary
+ * accruals/payments/ledger transactions.
+ */
+export async function deleteEmployee(input: { employeeId: string; reason?: string }): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete an employee." };
+  }
+
+  const parsed = deleteEmployeeSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { employeeId, reason } = parsed.data;
+
+  const db = getDb();
+
+  try {
+    const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
+    if (!employee) {
+      return { ok: false, error: "Employee not found." };
+    }
+
+    const [accrualRows, paymentRows, ledgerRows] = await Promise.all([
+      db.select().from(employeeSalaryAccruals).where(eq(employeeSalaryAccruals.employeeId, employeeId)),
+      db.select().from(employeePayments).where(eq(employeePayments.employeeId, employeeId)),
+      db.select().from(employeeLedgerTransactions).where(eq(employeeLedgerTransactions.employeeId, employeeId)),
+    ]);
+
+    await db.delete(employees).where(eq(employees.id, employeeId));
+
+    await logActivity({
+      action: "employee_deleted",
+      targetType: "employee",
+      targetId: employeeId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: {
+        employeeName: employee.name,
+        reason: reason ?? null,
+        purgedCounts: {
+          salaryAccruals: accrualRows.length,
+          payments: paymentRows.length,
+          ledgerTransactions: ledgerRows.length,
+        },
+      },
+    });
+
+    revalidatePath("/dashboard/employees");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to delete employee.",
     };
   }
 }
