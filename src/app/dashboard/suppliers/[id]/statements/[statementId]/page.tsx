@@ -166,8 +166,8 @@ export default async function SupplierStatementPage({
         <CardHeader>
           <CardTitle>Other transactions</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+        <CardContent className="flex flex-col gap-3 p-0">
+          <div className="hidden overflow-x-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -204,6 +204,28 @@ export default async function SupplierStatementPage({
                 )}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="flex flex-col gap-3 px-4 pb-4 md:hidden">
+            {otherEntries.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground">
+                No payments, opening balance, or void entries in this period.
+              </p>
+            ) : (
+              otherEntries.map((entry) => (
+                <div key={entry.id} className="flex flex-col gap-1 rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{typeLabels[entry.type]}</span>
+                    <span className="text-sm text-muted-foreground">{formatDate(entry.createdAt)}</span>
+                  </div>
+                  {entry.note ? <p className="text-sm text-muted-foreground">{entry.note}</p> : null}
+                  <p className={entry.direction === "debit" ? "text-destructive" : "text-success"}>
+                    {entry.direction === "debit" ? "− " : "+ "}
+                    {formatAmount(entry.amount)}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
