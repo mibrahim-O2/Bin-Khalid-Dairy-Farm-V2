@@ -8,11 +8,13 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { billLineItems, bills, counters, customerLedgerTransactions, customers } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
+import { logActivity } from "@/lib/db/activity-log";
 import { calculateDays, calculateLineTotals, calculateSubtotal } from "@/lib/billing";
 import { isoDateSchema } from "@/lib/zod-date";
 
@@ -94,12 +96,15 @@ export async function updateDraftBill(input: z.infer<typeof updateDraftSchema>):
   }
   const { billId, startDate, endDate, lineItems, note } = parsed.data;
 
+  let customerId: string | undefined;
+
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [bill] = await tx.select().from(bills).where(eq(bills.id, billId));
       if (!bill) throw new Error("Bill not found.");
       if (bill.status !== "draft") throw new Error("Only a draft bill can be edited.");
+      customerId = bill.customerId;
 
       const days = calculateDays(startDate, endDate);
       const computed = lineItems.map((line) => ({ ...line, ...calculateLineTotals(line, days) }));
@@ -138,7 +143,7 @@ export async function updateDraftBill(input: z.infer<typeof updateDraftSchema>):
         );
       }
     });
-    revalidatePath(`/dashboard/customers/${input.billId}`);
+    if (customerId) revalidatePath(`/dashboard/customers/${customerId}`);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to save." };
@@ -167,12 +172,15 @@ export async function finalizeBill(input: { billId: string }): Promise<ActionRes
   }
   const { billId } = parsed.data;
 
+  let customerId: string | undefined;
+
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [bill] = await tx.select().from(bills).where(eq(bills.id, billId));
       if (!bill) throw new Error("Bill not found.");
       if (bill.status !== "draft") throw new Error("Only a draft bill can be finalized.");
+      customerId = bill.customerId;
 
       const lineRows = await tx
         .select()
@@ -257,65 +265,172 @@ export async function finalizeBill(input: { billId: string }): Promise<ActionRes
         })
         .where(eq(bills.id, billId));
     });
-    revalidatePath(`/dashboard/customers/${billId}`);
+    if (customerId) {
+      revalidatePath(`/dashboard/customers/${customerId}`);
+      revalidatePath(`/dashboard/customers/${customerId}/ledger`);
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to finalize bill." };
   }
 }
 
-const voidSchema = z.object({
+const updateFinalizedSchema = z.object({
   billId: z.string().min(1),
-  reason: z.string().min(1).max(500),
-  createReplacement: z.boolean().optional(),
+  startDate: isoDateSchema,
+  endDate: isoDateSchema,
+  lineItems: z.array(lineItemSchema),
+  note: z.string().max(2000).optional(),
 });
 
 /**
- * Voids a finalized bill: never deletes it, never edits its recorded
- * amounts. Instead records a reversing ledger credit (the original debit
- * stays in history) and updates the cached balance, atomically. Optionally
- * creates a linked replacement draft in the same transaction — creating it
- * outside this transaction would race against another read of the
- * just-voided bill.
+ * Owner-only correction of an already-finalized bill (the ledger's Edit
+ * action) — see updateFinalizedPurchase's doc comment for the same
+ * reasoning on the supplier side. Recomputes the subtotal from the new
+ * line items/period and applies only the DELTA to the customer's cached
+ * balance, and updates the matching "bill" ledger row's own amount to
+ * match, so the ledger view's running balance and customers.balance
+ * never disagree.
  */
-export async function voidBill(input: {
-  billId: string;
-  reason: string;
-  createReplacement?: boolean;
-}): Promise<ActionResult & { replacementBillId?: string }> {
+export async function updateFinalizedBill(input: z.infer<typeof updateFinalizedSchema>): Promise<ActionResult> {
   const session = await getServerSession();
   if (!session || !session.active) {
     return { ok: false, error: "Not authorized." };
   }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can edit a finalized bill." };
+  }
 
-  const parsed = voidSchema.safeParse(input);
+  const parsed = updateFinalizedSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: "Invalid input." };
   }
-  const { billId, reason, createReplacement } = parsed.data;
+  const { billId, startDate, endDate, lineItems, note } = parsed.data;
+  if (lineItems.length === 0) {
+    return { ok: false, error: "A bill must have at least one line item." };
+  }
 
-  let replacementBillId: string | undefined;
+  let customerId: string | undefined;
 
   try {
     const db = getDb();
     await db.transaction(async (tx) => {
       const [bill] = await tx.select().from(bills).where(eq(bills.id, billId));
       if (!bill) throw new Error("Bill not found.");
-      if (bill.status !== "finalized") throw new Error("Only a finalized bill can be voided.");
+      if (bill.status !== "finalized") throw new Error("Only a finalized bill can be edited this way.");
+      customerId = bill.customerId;
+
+      const days = calculateDays(startDate, endDate);
+      const computed = lineItems.map((line) => ({ ...line, ...calculateLineTotals(line, days) }));
+      const newSubtotal = calculateSubtotal(computed.map((line) => line.lineTotal));
+      const oldSubtotal = Number(bill.subtotal);
+      const delta = Math.round((newSubtotal - oldSubtotal) * 100) / 100;
+      const now = new Date();
+
+      await tx.delete(billLineItems).where(eq(billLineItems.billId, billId));
+      await tx.insert(billLineItems).values(
+        computed.map((line, index) => ({
+          billId,
+          productId: line.productId,
+          productName: line.productName,
+          unit: line.unit,
+          billingType: line.billingType,
+          rate: String(line.rate),
+          dailyQty: line.dailyQty === undefined ? null : String(line.dailyQty),
+          extra: line.extra === undefined ? null : String(line.extra),
+          less: line.less === undefined ? null : String(line.less),
+          quantity: line.quantity === undefined ? null : String(line.quantity),
+          totalQty: String(line.totalQty),
+          lineTotal: String(line.lineTotal),
+          sortOrder: index,
+        }))
+      );
+
+      const previousBalance = bill.previousBalance !== null ? Number(bill.previousBalance) : 0;
+      await tx
+        .update(bills)
+        .set({
+          startDate,
+          endDate,
+          days,
+          subtotal: String(newSubtotal),
+          totalPayable: String(Math.round((previousBalance + newSubtotal) * 100) / 100),
+          note: note?.trim() || null,
+          updatedAt: now,
+        })
+        .where(eq(bills.id, billId));
+
+      await tx
+        .update(customerLedgerTransactions)
+        .set({ amount: String(newSubtotal) })
+        .where(and(eq(customerLedgerTransactions.billId, billId), eq(customerLedgerTransactions.type, "bill")));
+
+      await tx
+        .update(customers)
+        .set({ balance: sql`${customers.balance} + ${delta}`, updatedAt: now })
+        .where(eq(customers.id, bill.customerId));
+    });
+    if (customerId) {
+      revalidatePath(`/dashboard/customers/${customerId}`);
+      revalidatePath(`/dashboard/customers/${customerId}/ledger`);
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to save changes." };
+  }
+}
+
+const deleteSchema = z.object({
+  billId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+  createReplacement: z.boolean().optional(),
+});
+
+/**
+ * Permanently deletes a finalized bill — see deletePurchase's doc comment
+ * for the same reasoning (a deliberate departure from "never hard-delete
+ * a financial record", since void was mostly used to fix plain
+ * data-entry mistakes). Reverses the customer's cached balance by the
+ * bill's own subtotal, then deletes the row — its line items,
+ * customer_ledger_transactions row, and any payment_allocations rows all
+ * cascade away via their FK (ON DELETE CASCADE). Owner-only, matching the
+ * ledger's Edit/Delete gating — a tightening from the old void's
+ * any-active-admin gate.
+ */
+export async function deleteBill(input: {
+  billId: string;
+  reason?: string;
+  createReplacement?: boolean;
+}): Promise<ActionResult & { replacementBillId?: string }> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a bill." };
+  }
+
+  const parsed = deleteSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { billId, reason, createReplacement } = parsed.data;
+
+  let replacementBillId: string | undefined;
+  let customerId: string | undefined;
+  let subtotalForLog = 0;
+
+  try {
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      const [bill] = await tx.select().from(bills).where(eq(bills.id, billId));
+      if (!bill) throw new Error("Bill not found.");
+      if (bill.status !== "finalized") throw new Error("Only a finalized bill can be deleted.");
+      customerId = bill.customerId;
+      subtotalForLog = Number(bill.subtotal);
 
       const now = new Date();
       const subtotal = Number(bill.subtotal);
-
-      await tx.insert(customerLedgerTransactions).values({
-        customerId: bill.customerId,
-        type: "bill_void",
-        direction: "credit",
-        amount: String(subtotal),
-        note: `Void of bill ${bill.billNumber}: ${reason}`,
-        billId,
-        createdByUid: session.uid,
-        createdByEmail: session.email,
-      });
 
       await tx
         .update(customers)
@@ -341,7 +456,6 @@ export async function voidBill(input: {
           amountPaid: "0",
           note: bill.note,
           createdByUid: session.uid,
-          replacesBillId: billId,
         });
         if (lineRows.length > 0) {
           await tx.insert(billLineItems).values(
@@ -364,22 +478,24 @@ export async function voidBill(input: {
         }
       }
 
-      await tx
-        .update(bills)
-        .set({
-          status: "void",
-          voidedAt: now,
-          voidedByUid: session.uid,
-          voidedByEmail: session.email,
-          voidReason: reason,
-          replacedByBillId: replacementBillId ?? null,
-          updatedAt: now,
-        })
-        .where(eq(bills.id, billId));
+      // Cascades: bill_line_items, customer_ledger_transactions,
+      // payment_allocations.
+      await tx.delete(bills).where(eq(bills.id, billId));
     });
-    revalidatePath(`/dashboard/customers/${input.billId}`);
+    await logActivity({
+      action: "bill_deleted",
+      targetType: "bill",
+      targetId: billId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { customerId, subtotal: subtotalForLog, reason: reason ?? null, replacementBillId: replacementBillId ?? null },
+    });
+    if (customerId) {
+      revalidatePath(`/dashboard/customers/${customerId}`);
+      revalidatePath(`/dashboard/customers/${customerId}/ledger`);
+    }
     return { ok: true, replacementBillId };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Failed to void bill." };
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to delete bill." };
   }
 }
