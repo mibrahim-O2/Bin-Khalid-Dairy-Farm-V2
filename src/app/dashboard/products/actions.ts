@@ -84,6 +84,42 @@ export async function updateProduct(input: z.infer<typeof updateProductSchema>):
   }
 }
 
+const deleteProductSchema = z.object({
+  productId: z.string().min(1),
+});
+
+/**
+ * Non-financial master data — any active admin can delete, not just the
+ * Owner (Owner-gating is reserved for the customer full-purge, which
+ * cascades real financial history). Safe by construction: bill line items
+ * and customer rates reference a product with the default (non-cascading)
+ * FK behavior, so Postgres itself rejects deleting a product that's
+ * actually been used anywhere — this only ever succeeds for a product
+ * that was never billed.
+ */
+export async function deleteProduct(input: z.infer<typeof deleteProductSchema>): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+
+  const parsed = deleteProductSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+
+  try {
+    await getDb().delete(products).where(eq(products.id, parsed.data.productId));
+    revalidatePath("/dashboard/products");
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "23503") {
+      return { ok: false, error: "This product has already been used in a bill and can't be deleted — archive it instead." };
+    }
+    return { ok: false, error: "Failed to delete. Check your connection and try again." };
+  }
+}
+
 const setActiveSchema = z.object({
   productId: z.string().min(1),
   active: z.boolean(),
