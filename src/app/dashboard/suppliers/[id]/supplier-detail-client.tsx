@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase } from "@/types/purchase";
 import type { SupplierStatement } from "@/types/supplier-statement";
+import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
 import { formatAmount } from "@/lib/format-number";
 import { SupplierFormDialog } from "../supplier-form-dialog";
 import { setSupplierActive } from "../crud-actions";
@@ -17,17 +18,24 @@ import { OpeningBalanceCard } from "./opening-balance-card";
 import { PurchasesList } from "./purchases-list";
 import { RecordPaymentDialog } from "./record-payment-dialog";
 import { StatementsCard } from "./statements-card";
+import { DeleteSupplierDialog } from "./delete-supplier-dialog";
 
 export function SupplierDetailClient({
+  isOwner,
   supplier,
   purchases,
   openingBalanceEntry,
   statements,
+  businessInfo,
+  invoiceSettings,
 }: {
+  isOwner: boolean;
   supplier: Supplier | null;
   purchases: Purchase[];
   openingBalanceEntry: SupplierLedgerTransaction | null;
   statements: SupplierStatement[];
+  businessInfo: BusinessSettings;
+  invoiceSettings: InvoiceSettings;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -79,6 +87,7 @@ export function SupplierDetailClient({
             <Button variant="outline" size="sm" disabled={toggling} onClick={toggleActive}>
               {supplier.active ? "Archive" : "Unarchive"}
             </Button>
+            {isOwner ? <DeleteSupplierDialog supplierId={supplier.id} supplierName={supplier.name} /> : null}
           </div>
         </div>
       </div>
@@ -132,7 +141,13 @@ export function SupplierDetailClient({
         entry={openingBalanceEntry}
       />
 
-      <PurchasesList supplierId={supplier.id} purchases={purchases} />
+      <PurchasesList
+        supplierId={supplier.id}
+        supplier={supplier}
+        purchases={purchases}
+        businessInfo={businessInfo}
+        invoiceSettings={invoiceSettings}
+      />
 
       <StatementsCard supplierId={supplier.id} statements={statements} />
     </div>
