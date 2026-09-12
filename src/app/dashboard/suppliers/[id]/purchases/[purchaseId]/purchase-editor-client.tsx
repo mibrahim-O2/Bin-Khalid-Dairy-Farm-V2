@@ -410,7 +410,7 @@ export function PurchaseEditorClient({
               Save draft
             </Button>
             <Button disabled={finalizing || computedLines.length === 0} onClick={handleFinalize}>
-              Finalize purchase
+              Save Purchase
             </Button>
           </>
         ) : null}
