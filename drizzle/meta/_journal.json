@@ -43,6 +43,13 @@
       "when": 1789217625792,
       "tag": "0005_ambitious_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789226138036,
+      "tag": "0006_furry_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }
