@@ -7,7 +7,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { getServerSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { employeeLedgerTransactions, employeeSalaryAccruals, employeeStatements, employees } from "@/lib/db/schema";
-import { toEmployeeLedgerTransaction } from "@/lib/db/mappers";
+import { toEmployeeLedgerTransaction, toEmployeeSalaryAccrual } from "@/lib/db/mappers";
 import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
@@ -71,19 +71,19 @@ export async function generateEmployeeStatement(input: {
     const accrualIds = allTransactionRows
       .map((row) => row.accrualId)
       .filter((id): id is string => id !== null);
-    const periodEndById = new Map<string, string>();
+    const accrualById = new Map<string, ReturnType<typeof toEmployeeSalaryAccrual>>();
     if (accrualIds.length > 0) {
       const accrualRows = await db
-        .select({ id: employeeSalaryAccruals.id, periodEnd: employeeSalaryAccruals.periodEnd })
+        .select()
         .from(employeeSalaryAccruals)
         .where(inArray(employeeSalaryAccruals.id, accrualIds));
-      for (const a of accrualRows) periodEndById.set(a.id, a.periodEnd);
+      for (const a of accrualRows) accrualById.set(a.id, toEmployeeSalaryAccrual(a));
     }
 
     function effectiveDateIso(row: (typeof allTransactionRows)[number], createdAtIso: string): string {
       if (row.accrualId) {
-        const periodEnd = periodEndById.get(row.accrualId);
-        if (periodEnd) return `${periodEnd}T12:00:00.000Z`;
+        const accrual = accrualById.get(row.accrualId);
+        if (accrual) return `${accrual.periodEnd}T12:00:00.000Z`;
       }
       return createdAtIso;
     }
@@ -96,7 +96,16 @@ export async function generateEmployeeStatement(input: {
 
     const sortedRows = allTransactionRows
       .map((row) => ({ row, entry: toEmployeeLedgerTransaction(row) }))
-      .map(({ row, entry }) => ({ entry, effectiveDate: effectiveDateIso(row, entry.createdAt) }))
+      .map(({ row, entry }) => {
+        // Leave figures live on the accrual row, not this ledger row —
+        // join them in so the persisted statement snapshot shows them too.
+        const accrual = row.accrualId ? accrualById.get(row.accrualId) : undefined;
+        const enrichedEntry =
+          accrual && accrual.leaveDaysDeducted
+            ? { ...entry, leaveDaysDeducted: accrual.leaveDaysDeducted, leaveAmountDeducted: accrual.leaveAmountDeducted ?? undefined }
+            : entry;
+        return { entry: enrichedEntry, effectiveDate: effectiveDateIso(row, entry.createdAt) };
+      })
       .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
 
     for (const { entry, effectiveDate } of sortedRows) {
