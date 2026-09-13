@@ -5,6 +5,10 @@ export type Employee = {
   /** Often a different number than `phone` — used for the "Send via WhatsApp" statement-share button. */
   whatsappNumber: string | null;
   address: string | null;
+  /** Set once at creation, never edited afterward — see the Employee
+   *  Record module (src/app/dashboard/employee-record). Nullable only
+   *  because rows created before this field existed predate it. */
+  joiningDate: string | null;
   /** Soft-delete flag. Employees are archived, never hard-deleted. */
   active: boolean;
   /** Cached Σcredits (salary accrued) − Σdebits (advances/payments taken) —
@@ -51,4 +55,10 @@ export type EmployeeLedgerTransaction = {
   accrualId?: string;
   /** Present on "payment"/"payment_void" entries. */
   paymentId?: string;
+  /** Not a column on this row — joined in from the linked
+   *  employeeSalaryAccruals row wherever a full ledger view is built
+   *  (the ledger page, statement generation, statement display), so a
+   *  "salary_accrual" entry with a leave deduction applied can show it. */
+  leaveDaysDeducted?: number;
+  leaveAmountDeducted?: number;
 };
