@@ -14,9 +14,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { voidSupplierPayment } from "../../actions";
+import { deleteSupplierPayment } from "../../actions";
 
-export function VoidPaymentDialog({ paymentId }: { paymentId: string }) {
+/** Owner-only — see deleteSupplierPayment's doc comment for why this replaced Void. */
+export function DeletePaymentDialog({ paymentId }: { paymentId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -25,13 +26,9 @@ export function VoidPaymentDialog({ paymentId }: { paymentId: string }) {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!reason.trim()) {
-      setError("A reason is required.");
-      return;
-    }
     setSaving(true);
     setError(null);
-    const result = await voidSupplierPayment({ paymentId, reason: reason.trim() });
+    const result = await deleteSupplierPayment({ paymentId, reason: reason.trim() || undefined });
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -42,32 +39,31 @@ export function VoidPaymentDialog({ paymentId }: { paymentId: string }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm">Void</Button>} />
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) setError(null); }}>
+      <DialogTrigger render={<Button variant="destructive" size="sm">Delete</Button>} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Void this payment</DialogTitle>
+          <DialogTitle>Delete this payment?</DialogTitle>
           <DialogDescription>
-            This never deletes or edits the original payment — it records a reversing debit,
-            restores any purchases it settled back to their prior payment status, and marks the
-            payment void, permanently.
+            This permanently removes this payment and its amount from the ledger and database,
+            restoring any purchases it settled back to unpaid/partially-paid. This cannot be
+            undone.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="void-payment-reason">Reason</Label>
+            <Label htmlFor="delete-payment-reason">Reason (optional)</Label>
             <Textarea
-              id="void-payment-reason"
+              id="delete-payment-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
-              required
             />
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={saving}>
-              Void payment
+              Yes, delete payment
             </Button>
           </DialogFooter>
         </form>
