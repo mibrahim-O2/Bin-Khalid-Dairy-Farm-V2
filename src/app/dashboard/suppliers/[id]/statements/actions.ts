@@ -4,13 +4,16 @@
 
 import { z } from "zod";
 import { asc, eq, inArray } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "@/lib/auth/session";
+import { isOwnerSession } from "@/lib/auth/owner";
 import { getDb } from "@/lib/db/client";
 import { purchases, supplierLedgerTransactions, supplierStatements, suppliers } from "@/lib/db/schema";
 import { toSupplierLedgerTransaction } from "@/lib/db/mappers";
 import { isoDateSchema } from "@/lib/zod-date";
 
 type ActionResult = { ok: true; statementId: string } | { ok: false; error: string };
+type SimpleActionResult = { ok: true } | { ok: false; error: string };
 
 const generateSchema = z.object({
   supplierId: z.string().min(1),
@@ -159,5 +162,44 @@ export async function generateSupplierStatement(input: {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to generate statement.",
     };
+  }
+}
+
+const deleteStatementSchema = z.object({ statementId: z.string().min(1) });
+
+/**
+ * Deletes a generated statement snapshot — Owner-only, matching the
+ * ledger's Edit/Delete gating. This only removes the frozen document
+ * itself; it never touches the underlying purchases/payments/ledger
+ * transactions it was generated from, since a statement is just a
+ * point-in-time snapshot, never a second ledger.
+ */
+export async function deleteSupplierStatement(input: { statementId: string }): Promise<SimpleActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a statement." };
+  }
+
+  const parsed = deleteStatementSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+
+  try {
+    const [statement] = await getDb()
+      .select({ supplierId: supplierStatements.supplierId })
+      .from(supplierStatements)
+      .where(eq(supplierStatements.id, parsed.data.statementId));
+    if (!statement) {
+      return { ok: false, error: "Statement not found." };
+    }
+    await getDb().delete(supplierStatements).where(eq(supplierStatements.id, parsed.data.statementId));
+    revalidatePath(`/dashboard/suppliers/${statement.supplierId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to delete statement." };
   }
 }
