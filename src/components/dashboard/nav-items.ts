@@ -11,6 +11,7 @@ import {
   UserCheck,
   Milk,
   PawPrint,
+  CalendarOff,
 } from "lucide-react";
 
 export type NavItem = {
@@ -30,6 +31,7 @@ export const navItems: NavItem[] = [
   { href: "/dashboard/farm-supplies", label: "Farm Supplies", icon: Wheat },
   { href: "/dashboard/livestock", label: "Livestock", icon: PawPrint },
   { href: "/dashboard/employees", label: "Employees", icon: HandCoins },
+  { href: "/dashboard/employee-record", label: "Employee Record", icon: CalendarOff },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/pending-users", label: "Pending Users", icon: UserCheck, ownerOnly: true },
