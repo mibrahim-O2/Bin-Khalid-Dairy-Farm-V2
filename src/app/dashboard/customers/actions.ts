@@ -216,33 +216,42 @@ export async function recordCustomerPayment(input: {
   }
 }
 
-const voidPaymentSchema = z.object({
+const updatePaymentSchema = z.object({
   paymentId: z.string().min(1),
-  reason: z.string().min(1).max(500),
+  amount: z.number().positive(),
+  method: z.string().max(100).optional(),
+  note: z.string().max(500).optional(),
 });
 
 /**
- * Voids a payment: never deletes or edits the original record (same
- * principle as voidBill). Reverses exactly what this payment did — its
- * FIFO allocations (each bill's amountPaid drops back by what this specific
- * payment contributed, so getBillPaymentStatus() re-derives correctly even
- * if other payments also touched the same bill) and the customer's cached
- * balance — via a reversing debit ledger entry.
+ * Owner-only correction of an existing payment's amount/method/note (the
+ * ledger's Edit action). If the amount changes, every existing FIFO
+ * allocation this payment made is reversed (each bill's amountPaid drops
+ * back) and re-run from scratch against the customer's currently
+ * outstanding finalized bills with the new amount — same allocation
+ * logic as recordCustomerPayment. The matching "payment" ledger row's
+ * amount is updated too, and the customer's cached balance moves by
+ * exactly the delta (old amount undone, new amount applied).
  */
-export async function voidCustomerPayment(input: {
+export async function updateCustomerPayment(input: {
   paymentId: string;
-  reason: string;
+  amount: number;
+  method?: string;
+  note?: string;
 }): Promise<ActionResult> {
   const session = await getServerSession();
   if (!session || !session.active) {
     return { ok: false, error: "Not authorized." };
   }
-
-  const parsed = voidPaymentSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "A reason is required to void a payment." };
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can edit a payment." };
   }
-  const { paymentId, reason } = parsed.data;
+
+  const parsed = updatePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Enter a valid payment amount greater than zero." };
+  }
+  const { paymentId, amount, method, note } = parsed.data;
 
   const db = getDb();
   let customerId: string | undefined;
@@ -250,50 +259,65 @@ export async function voidCustomerPayment(input: {
   try {
     await db.transaction(async (tx) => {
       const [payment] = await tx.select().from(payments).where(eq(payments.id, paymentId));
-      if (!payment) {
-        throw new Error("Payment not found.");
-      }
-      if (payment.voidedAt != null) {
-        throw new Error("This payment has already been voided.");
-      }
+      if (!payment) throw new Error("Payment not found.");
       customerId = payment.customerId;
+      const oldAmount = Number(payment.amount);
+      const now = new Date();
 
       const allocations = await tx
         .select()
         .from(paymentAllocations)
         .where(eq(paymentAllocations.paymentId, paymentId));
-
-      await tx.insert(customerLedgerTransactions).values({
-        customerId: payment.customerId,
-        type: "payment_void",
-        direction: "debit",
-        amount: payment.amount,
-        note: `Void of payment: ${reason}`,
-        paymentId,
-        createdByUid: session.uid,
-        createdByEmail: session.email,
-      });
-
-      await tx
-        .update(customers)
-        .set({ balance: sql`${customers.balance} + ${payment.amount}`, updatedAt: new Date() })
-        .where(eq(customers.id, payment.customerId));
-
-      await tx
-        .update(payments)
-        .set({
-          voidedAt: new Date(),
-          voidedByUid: session.uid,
-          voidedByEmail: session.email,
-          voidReason: reason,
-        })
-        .where(eq(payments.id, paymentId));
-
       for (const allocation of allocations) {
         await tx
           .update(bills)
-          .set({ amountPaid: sql`${bills.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+          .set({ amountPaid: sql`${bills.amountPaid} - ${allocation.amount}`, updatedAt: now })
           .where(eq(bills.id, allocation.billId));
+      }
+      await tx.delete(paymentAllocations).where(eq(paymentAllocations.paymentId, paymentId));
+
+      await tx
+        .update(payments)
+        .set({ amount: String(amount), method: method ?? null, note: note ?? null })
+        .where(eq(payments.id, paymentId));
+
+      await tx
+        .update(customerLedgerTransactions)
+        .set({ amount: String(amount), note: note?.trim() || `Payment${method ? ` (${method})` : ""}` })
+        .where(and(eq(customerLedgerTransactions.paymentId, paymentId), eq(customerLedgerTransactions.type, "payment")));
+
+      // Net balance move: undo the old credit, apply the new one.
+      const delta = Math.round((oldAmount - amount) * 100) / 100;
+      await tx
+        .update(customers)
+        .set({ balance: sql`${customers.balance} + ${delta}`, updatedAt: now })
+        .where(eq(customers.id, payment.customerId));
+
+      let remaining = amount;
+      const outstandingBills = await tx
+        .select()
+        .from(bills)
+        .where(and(eq(bills.customerId, payment.customerId), eq(bills.status, "finalized")))
+        .orderBy(asc(bills.finalizedAt));
+      for (const bill of outstandingBills) {
+        if (remaining <= 0) break;
+        const subtotal = Number(bill.subtotal);
+        const amountPaidSoFar = Number(bill.amountPaid ?? "0");
+        const due = Math.round((subtotal - amountPaidSoFar) * 100) / 100;
+        if (!Number.isFinite(due) || due <= 0) continue;
+
+        const newAllocation = Math.min(remaining, due);
+        await tx
+          .update(bills)
+          .set({ amountPaid: sql`${bills.amountPaid} + ${newAllocation}`, updatedAt: now })
+          .where(eq(bills.id, bill.id));
+        await tx.insert(paymentAllocations).values({
+          paymentId,
+          billId: bill.id,
+          customerId: payment.customerId,
+          amount: String(newAllocation),
+        });
+        remaining = Math.round((remaining - newAllocation) * 100) / 100;
       }
     });
 
@@ -303,9 +327,89 @@ export async function voidCustomerPayment(input: {
     }
     return { ok: true };
   } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to save changes." };
+  }
+}
+
+const deletePaymentSchema = z.object({
+  paymentId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * Permanently deletes a payment — see deletePurchase's doc comment for
+ * the same "void mostly fixed data-entry mistakes" reasoning. Reverses
+ * every FIFO allocation this payment made (each bill's amountPaid drops
+ * back) and the customer's cached balance, then deletes the row — its
+ * customer_ledger_transactions row and payment_allocations rows cascade
+ * away via their FK. Owner-only, matching the ledger's Edit/Delete
+ * gating — a tightening from the old void's any-active-admin gate.
+ */
+export async function deleteCustomerPayment(input: { paymentId: string; reason?: string }): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a payment." };
+  }
+
+  const parsed = deletePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { paymentId, reason } = parsed.data;
+
+  const db = getDb();
+  let customerId: string | undefined;
+  let amountForLog = 0;
+
+  try {
+    await db.transaction(async (tx) => {
+      const [payment] = await tx.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) {
+        throw new Error("Payment not found.");
+      }
+      customerId = payment.customerId;
+      amountForLog = Number(payment.amount);
+
+      const allocations = await tx
+        .select()
+        .from(paymentAllocations)
+        .where(eq(paymentAllocations.paymentId, paymentId));
+      for (const allocation of allocations) {
+        await tx
+          .update(bills)
+          .set({ amountPaid: sql`${bills.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+          .where(eq(bills.id, allocation.billId));
+      }
+
+      await tx
+        .update(customers)
+        .set({ balance: sql`${customers.balance} + ${payment.amount}`, updatedAt: new Date() })
+        .where(eq(customers.id, payment.customerId));
+
+      // Cascades: customer_ledger_transactions, payment_allocations.
+      await tx.delete(payments).where(eq(payments.id, paymentId));
+    });
+
+    await logActivity({
+      action: "payment_deleted",
+      targetType: "payment",
+      targetId: paymentId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { customerId, amount: amountForLog, reason: reason ?? null },
+    });
+    if (customerId) {
+      revalidatePath(`/dashboard/customers/${customerId}`);
+      revalidatePath(`/dashboard/customers/${customerId}/ledger`);
+    }
+    return { ok: true };
+  } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Failed to void payment.",
+      error: err instanceof Error ? err.message : "Failed to delete payment.",
     };
   }
 }
