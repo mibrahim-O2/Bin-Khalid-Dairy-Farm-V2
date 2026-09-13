@@ -97,7 +97,15 @@ export function EmployeeStatementTemplate({
             statement.transactions.map((entry) => (
               <tr key={entry.id} className="border-b border-neutral-100 align-top">
                 <td className="py-2">{formatDate(entry.createdAt)}</td>
-                <td className="py-2 break-words">{typeLabels[entry.type]}</td>
+                <td className="py-2 break-words">
+                  {typeLabels[entry.type]}
+                  {entry.leaveDaysDeducted ? (
+                    <div className="mt-0.5 text-xs text-neutral-500">
+                      Leave: {entry.leaveDaysDeducted} day{entry.leaveDaysDeducted === 1 ? "" : "s"}, deducted{" "}
+                      {formatAmount(entry.leaveAmountDeducted ?? 0)}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="py-2 text-right">{entry.direction === "debit" ? formatAmount(entry.amount) : "—"}</td>
                 <td className="py-2 text-right">{entry.direction === "credit" ? formatAmount(entry.amount) : "—"}</td>
               </tr>
