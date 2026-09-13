@@ -15,7 +15,8 @@ import { formatDate } from "@/lib/format-date";
 import type { EmployeeSalaryAccrual, SalaryAccrualStatus } from "@/types/salary-accrual";
 import type { EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
 import { RecordAccrualDialog } from "./record-accrual-dialog";
-import { VoidAccrualDialog } from "./void-accrual-dialog";
+import { EditAccrualDialog } from "./edit-accrual-dialog";
+import { DeleteAccrualDialog } from "./delete-accrual-dialog";
 
 const statusVariant: Record<SalaryAccrualStatus, "default" | "destructive"> = {
   finalized: "default",
@@ -26,10 +27,12 @@ export function AccrualsList({
   employeeId,
   accruals,
   salaryHistory,
+  isOwner,
 }: {
   employeeId: string;
   accruals: EmployeeSalaryAccrual[];
   salaryHistory: EmployeeSalaryHistoryEntry[];
+  isOwner: boolean;
 }) {
   return (
     <Card>
@@ -44,6 +47,7 @@ export function AccrualsList({
               <TableRow>
                 <TableHead>Period</TableHead>
                 <TableHead>Amount</TableHead>
+                <TableHead>Leave</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -51,7 +55,7 @@ export function AccrualsList({
             <TableBody>
               {accruals.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     No salary accruals yet.
                   </TableCell>
                 </TableRow>
@@ -62,6 +66,11 @@ export function AccrualsList({
                       {formatDate(accrual.periodStart)} – {formatDate(accrual.periodEnd)}
                     </TableCell>
                     <TableCell>{formatAmount(accrual.amount)}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {accrual.leaveDaysDeducted
+                        ? `${accrual.leaveDaysDeducted}d / ${formatAmount(accrual.leaveAmountDeducted ?? 0)}`
+                        : "—"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant[accrual.status]} className="capitalize">
                         {accrual.status}
@@ -69,7 +78,10 @@ export function AccrualsList({
                     </TableCell>
                     <TableCell className="text-right">
                       {accrual.status === "finalized" ? (
-                        <VoidAccrualDialog accrualId={accrual.id} />
+                        <div className="flex justify-end gap-2">
+                          <EditAccrualDialog accrual={accrual} />
+                          {isOwner ? <DeleteAccrualDialog accrualId={accrual.id} /> : null}
+                        </div>
                       ) : null}
                     </TableCell>
                   </TableRow>
