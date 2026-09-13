@@ -8,14 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
-import type { Purchase } from "@/types/purchase";
 import type { SupplierStatement } from "@/types/supplier-statement";
-import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
 import { formatAmount } from "@/lib/format-number";
 import { SupplierFormDialog } from "../supplier-form-dialog";
 import { setSupplierActive } from "../crud-actions";
 import { OpeningBalanceCard } from "./opening-balance-card";
-import { PurchasesList } from "./purchases-list";
 import { RecordPaymentDialog } from "./record-payment-dialog";
 import { StatementsCard } from "./statements-card";
 import { DeleteSupplierDialog } from "./delete-supplier-dialog";
@@ -23,19 +20,13 @@ import { DeleteSupplierDialog } from "./delete-supplier-dialog";
 export function SupplierDetailClient({
   isOwner,
   supplier,
-  purchases,
   openingBalanceEntry,
   statements,
-  businessInfo,
-  invoiceSettings,
 }: {
   isOwner: boolean;
   supplier: Supplier | null;
-  purchases: Purchase[];
   openingBalanceEntry: SupplierLedgerTransaction | null;
   statements: SupplierStatement[];
-  businessInfo: BusinessSettings;
-  invoiceSettings: InvoiceSettings;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -141,15 +132,14 @@ export function SupplierDetailClient({
         entry={openingBalanceEntry}
       />
 
-      <PurchasesList
-        supplierId={supplier.id}
-        supplier={supplier}
-        purchases={purchases}
-        businessInfo={businessInfo}
-        invoiceSettings={invoiceSettings}
-      />
+      <Link
+        href={`/dashboard/suppliers/${supplier.id}/ledger`}
+        className="text-sm text-primary hover:underline"
+      >
+        View purchases &amp; full ledger &rarr;
+      </Link>
 
-      <StatementsCard supplierId={supplier.id} statements={statements} />
+      <StatementsCard supplierId={supplier.id} statements={statements} isOwner={isOwner} />
     </div>
   );
 }
