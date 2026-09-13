@@ -109,6 +109,8 @@ export default async function EmployeeStatementPage({
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Note</TableHead>
+                  <TableHead>Leave</TableHead>
+                  <TableHead>Leave Amount</TableHead>
                   <TableHead>Debit</TableHead>
                   <TableHead>Credit</TableHead>
                 </TableRow>
@@ -116,7 +118,7 @@ export default async function EmployeeStatementPage({
               <TableBody>
                 {statement.transactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No transactions in this period.
                     </TableCell>
                   </TableRow>
@@ -128,6 +130,10 @@ export default async function EmployeeStatementPage({
                         {typeLabels[entry.type]}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{entry.note}</TableCell>
+                      <TableCell>{entry.leaveDaysDeducted ? entry.leaveDaysDeducted : "—"}</TableCell>
+                      <TableCell>
+                        {entry.leaveAmountDeducted ? formatAmount(entry.leaveAmountDeducted) : "—"}
+                      </TableCell>
                       <TableCell>
                         {entry.direction === "debit" ? formatAmount(entry.amount) : "—"}
                       </TableCell>
