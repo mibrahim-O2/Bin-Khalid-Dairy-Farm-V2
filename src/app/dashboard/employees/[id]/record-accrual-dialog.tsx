@@ -15,8 +15,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { formatAmount } from "@/lib/format-number";
 import { getCurrentSalary, type EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
 import { recordSalaryAccrual } from "../actions";
+import { getLeaveAutoFillDefaults } from "../../employee-record/actions";
 
 function firstOfMonthIso() {
   const now = new Date();
@@ -44,6 +46,9 @@ export function RecordAccrualDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leaveInfo, setLeaveInfo] = useState<{ leaveDays: number; leaveAmount: number; leaveIds: string[] } | null>(
+    null
+  );
 
   // Resets the form and does the initial pre-fill together, in the same
   // effect — salaryHistory is now a stable server-fetched prop (not a live
@@ -59,6 +64,7 @@ export function RecordAccrualDialog({
     setAmountTouched(false);
     setNote("");
     setError(null);
+    setLeaveInfo(null);
     const current = getCurrentSalary(salaryHistory, start);
     setAmount(current ? String(current.monthlySalary) : "");
     // Only the open transition should reset the form — salaryHistory is
@@ -73,6 +79,30 @@ export function RecordAccrualDialog({
     const current = getCurrentSalary(salaryHistory, periodStart);
     if (current) setAmount(String(current.monthlySalary));
   }, [open, salaryHistory, periodStart, amountTouched]);
+
+  // Same auto-fill principle as the Milk Record -> bill line item
+  // (getMilkAutoFillDefaults), but for this period's leave deduction
+  // instead — folds any resolved, not-yet-applied leave into the
+  // suggested amount. Still freely editable; the actual leave/deduction
+  // figures stored on the accrual are always recomputed server-side from
+  // `leaveIds`, never trusted from this client-side number.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const result = await getLeaveAutoFillDefaults({ employeeId, periodStart, periodEnd });
+      if (cancelled || !result.ok) return;
+      setLeaveInfo(result);
+      if (!amountTouched && result.leaveDays > 0) {
+        const current = getCurrentSalary(salaryHistory, periodStart);
+        if (current) setAmount(String(Math.max(current.monthlySalary - result.leaveAmount, 0)));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, employeeId, periodStart, periodEnd]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -94,6 +124,7 @@ export function RecordAccrualDialog({
       periodEnd,
       amount: parsedAmount,
       note: note.trim() || undefined,
+      applyLeaveIds: leaveInfo && leaveInfo.leaveDays > 0 ? leaveInfo.leaveIds : undefined,
     });
     setSaving(false);
     if (!result.ok) {
@@ -157,6 +188,12 @@ export function RecordAccrualDialog({
               <p className="text-xs text-muted-foreground">
                 No salary set yet — set one on this employee&apos;s page, or enter an amount
                 directly.
+              </p>
+            ) : null}
+            {leaveInfo && leaveInfo.leaveDays > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Includes a deduction of {formatAmount(leaveInfo.leaveAmount)} for {leaveInfo.leaveDays} leave day
+                {leaveInfo.leaveDays === 1 ? "" : "s"} in this period — still editable above.
               </p>
             ) : null}
           </div>
