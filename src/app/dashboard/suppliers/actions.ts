@@ -209,29 +209,41 @@ export async function recordSupplierPayment(input: {
   }
 }
 
-const voidPaymentSchema = z.object({
+const updatePaymentSchema = z.object({
   paymentId: z.string().min(1),
-  reason: z.string().min(1).max(500),
+  amount: z.number().positive(),
+  method: z.string().max(100).optional(),
+  note: z.string().max(500).optional(),
 });
 
 /**
- * Voids a supplier payment: never deletes or edits the original. Mirrors
- * voidCustomerPayment exactly.
+ * Owner-only correction of an existing Jama payment's amount/method/note
+ * (the ledger's Edit action). Mirrors updateCustomerPayment exactly: if
+ * the amount changes, every existing FIFO allocation is reversed and
+ * re-run against the supplier's currently outstanding finalized
+ * purchases with the new amount, the matching "payment" ledger row's
+ * amount is updated, and the supplier's cached balance moves by the
+ * delta (old amount undone, new amount applied).
  */
-export async function voidSupplierPayment(input: {
+export async function updateSupplierPayment(input: {
   paymentId: string;
-  reason: string;
+  amount: number;
+  method?: string;
+  note?: string;
 }): Promise<ActionResult> {
   const session = await getServerSession();
   if (!session || !session.active) {
     return { ok: false, error: "Not authorized." };
   }
-
-  const parsed = voidPaymentSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "A reason is required to void a payment." };
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can edit a payment." };
   }
-  const { paymentId, reason } = parsed.data;
+
+  const parsed = updatePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Enter a valid payment amount greater than zero." };
+  }
+  const { paymentId, amount, method, note } = parsed.data;
 
   const db = getDb();
   let supplierId: string | undefined;
@@ -239,50 +251,65 @@ export async function voidSupplierPayment(input: {
   try {
     await db.transaction(async (tx) => {
       const [payment] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, paymentId));
-      if (!payment) {
-        throw new Error("Payment not found.");
-      }
-      if (payment.voidedAt != null) {
-        throw new Error("This payment has already been voided.");
-      }
+      if (!payment) throw new Error("Payment not found.");
       supplierId = payment.supplierId;
+      const oldAmount = Number(payment.amount);
+      const now = new Date();
 
       const allocations = await tx
         .select()
         .from(supplierPaymentAllocations)
         .where(eq(supplierPaymentAllocations.paymentId, paymentId));
-
-      await tx.insert(supplierLedgerTransactions).values({
-        supplierId: payment.supplierId,
-        type: "payment_void",
-        direction: "debit",
-        amount: payment.amount,
-        note: `Void of payment: ${reason}`,
-        paymentId,
-        createdByUid: session.uid,
-        createdByEmail: session.email,
-      });
-
-      await tx
-        .update(suppliers)
-        .set({ balance: sql`${suppliers.balance} + ${payment.amount}`, updatedAt: new Date() })
-        .where(eq(suppliers.id, payment.supplierId));
-
-      await tx
-        .update(supplierPayments)
-        .set({
-          voidedAt: new Date(),
-          voidedByUid: session.uid,
-          voidedByEmail: session.email,
-          voidReason: reason,
-        })
-        .where(eq(supplierPayments.id, paymentId));
-
       for (const allocation of allocations) {
         await tx
           .update(purchases)
-          .set({ amountPaid: sql`${purchases.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+          .set({ amountPaid: sql`${purchases.amountPaid} - ${allocation.amount}`, updatedAt: now })
           .where(eq(purchases.id, allocation.purchaseId));
+      }
+      await tx.delete(supplierPaymentAllocations).where(eq(supplierPaymentAllocations.paymentId, paymentId));
+
+      await tx
+        .update(supplierPayments)
+        .set({ amount: String(amount), method: method ?? null, note: note ?? null })
+        .where(eq(supplierPayments.id, paymentId));
+
+      await tx
+        .update(supplierLedgerTransactions)
+        .set({ amount: String(amount), note: note?.trim() || `Payment${method ? ` (${method})` : ""}` })
+        .where(and(eq(supplierLedgerTransactions.paymentId, paymentId), eq(supplierLedgerTransactions.type, "payment")));
+
+      // Net balance move: undo the old credit, apply the new one.
+      const delta = Math.round((oldAmount - amount) * 100) / 100;
+      await tx
+        .update(suppliers)
+        .set({ balance: sql`${suppliers.balance} + ${delta}`, updatedAt: now })
+        .where(eq(suppliers.id, payment.supplierId));
+
+      let remaining = amount;
+      const outstandingPurchases = await tx
+        .select()
+        .from(purchases)
+        .where(and(eq(purchases.supplierId, payment.supplierId), eq(purchases.status, "finalized")))
+        .orderBy(asc(purchases.finalizedAt));
+      for (const purchase of outstandingPurchases) {
+        if (remaining <= 0) break;
+        const subtotal = Number(purchase.subtotal);
+        const amountPaidSoFar = Number(purchase.amountPaid ?? "0");
+        const due = Math.round((subtotal - amountPaidSoFar) * 100) / 100;
+        if (!Number.isFinite(due) || due <= 0) continue;
+
+        const newAllocation = Math.min(remaining, due);
+        await tx
+          .update(purchases)
+          .set({ amountPaid: sql`${purchases.amountPaid} + ${newAllocation}`, updatedAt: now })
+          .where(eq(purchases.id, purchase.id));
+        await tx.insert(supplierPaymentAllocations).values({
+          paymentId,
+          purchaseId: purchase.id,
+          supplierId: payment.supplierId,
+          amount: String(newAllocation),
+        });
+        remaining = Math.round((remaining - newAllocation) * 100) / 100;
       }
     });
 
@@ -292,9 +319,88 @@ export async function voidSupplierPayment(input: {
     }
     return { ok: true };
   } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to save changes." };
+  }
+}
+
+const deletePaymentSchema = z.object({
+  paymentId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * Permanently deletes a Jama payment — see deletePurchase's doc comment
+ * for the same reasoning. Reverses every FIFO allocation (each
+ * purchase's amountPaid drops back) and the supplier's cached balance,
+ * then deletes the row — its supplier_ledger_transactions row and
+ * supplier_payment_allocations rows cascade away via their FK.
+ * Owner-only, matching the ledger's Edit/Delete gating.
+ */
+export async function deleteSupplierPayment(input: { paymentId: string; reason?: string }): Promise<ActionResult> {
+  const session = await getServerSession();
+  if (!session || !session.active) {
+    return { ok: false, error: "Not authorized." };
+  }
+  if (!isOwnerSession(session)) {
+    return { ok: false, error: "Only the account owner can delete a payment." };
+  }
+
+  const parsed = deletePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const { paymentId, reason } = parsed.data;
+
+  const db = getDb();
+  let supplierId: string | undefined;
+  let amountForLog = 0;
+
+  try {
+    await db.transaction(async (tx) => {
+      const [payment] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, paymentId));
+      if (!payment) {
+        throw new Error("Payment not found.");
+      }
+      supplierId = payment.supplierId;
+      amountForLog = Number(payment.amount);
+
+      const allocations = await tx
+        .select()
+        .from(supplierPaymentAllocations)
+        .where(eq(supplierPaymentAllocations.paymentId, paymentId));
+      for (const allocation of allocations) {
+        await tx
+          .update(purchases)
+          .set({ amountPaid: sql`${purchases.amountPaid} - ${allocation.amount}`, updatedAt: new Date() })
+          .where(eq(purchases.id, allocation.purchaseId));
+      }
+
+      await tx
+        .update(suppliers)
+        .set({ balance: sql`${suppliers.balance} + ${payment.amount}`, updatedAt: new Date() })
+        .where(eq(suppliers.id, payment.supplierId));
+
+      // Cascades: supplier_ledger_transactions, supplier_payment_allocations.
+      await tx.delete(supplierPayments).where(eq(supplierPayments.id, paymentId));
+    });
+
+    await logActivity({
+      action: "payment_deleted",
+      targetType: "supplier_payment",
+      targetId: paymentId,
+      actorUid: session.uid,
+      actorEmail: session.email,
+      details: { supplierId, amount: amountForLog, reason: reason ?? null },
+    });
+    if (supplierId) {
+      revalidatePath(`/dashboard/suppliers/${supplierId}`);
+      revalidatePath(`/dashboard/suppliers/${supplierId}/ledger`);
+    }
+    return { ok: true };
+  } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Failed to void payment.",
+      error: err instanceof Error ? err.message : "Failed to delete payment.",
     };
   }
 }
