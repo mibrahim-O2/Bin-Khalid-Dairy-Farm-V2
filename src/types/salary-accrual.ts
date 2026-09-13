@@ -19,6 +19,11 @@ export type EmployeeSalaryAccrual = {
   amount: number;
   note: string | null;
   status: SalaryAccrualStatus;
+  /** Auto-filled from any resolved leave(s) applied to this accrual at the
+   *  time it was recorded — see recordSalaryAccrual. Null when no leave
+   *  applied. Frozen once set; never recomputed by a later edit. */
+  leaveDaysDeducted: number | null;
+  leaveAmountDeducted: number | null;
   createdAt: string;
   createdBy: SalaryAccrualActor;
   voidedAt: string | null;
