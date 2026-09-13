@@ -13,6 +13,12 @@ export const employees = pgTable("employees", {
   // "Send via WhatsApp" button.
   whatsappNumber: text("whatsapp_number"),
   address: text("address"),
+  // Set once at creation (createEmployee defaults it to today), never
+  // edited afterward — same pattern as customers.joiningDate (see its
+  // comment in schema/customers.ts). Nullable only because existing rows
+  // predate this column; the migration that adds it backfills every one
+  // of them from `created_at`. Shown as-is on the new Employee Record page.
+  joiningDate: date("joining_date"),
   // Soft-delete flag. Employees are archived, never hard-deleted.
   active: boolean("active").notNull().default(true),
   // Cached Σcredits (salary accrued) − Σdebits (advances/payments taken) —
