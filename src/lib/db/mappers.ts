@@ -12,6 +12,8 @@ import type {
   customerRates,
   customers,
   employeeLedgerTransactions,
+  employeeLeaves,
+  employeePayments,
   employees,
   employeeSalaryAccruals,
   employeeSalaryHistory,
@@ -33,6 +35,8 @@ import type { AuthorizedPerson, Employee, EmployeeLedgerTransaction } from "@/ty
 import type { EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
 import type { EmployeeSalaryAccrual } from "@/types/salary-accrual";
 import type { EmployeeStatement } from "@/types/employee-statement";
+import type { EmployeeLeave } from "@/types/employee-leave";
+import type { EmployeePayment } from "@/types/employee-payment";
 import type { Animal, AnimalCategory } from "@/types/livestock";
 
 // Converts a Postgres row (numeric columns as strings, timestamps as Date
@@ -216,6 +220,7 @@ export function toEmployee(row: typeof employees.$inferSelect): Employee {
     phone: row.phone,
     whatsappNumber: row.whatsappNumber,
     address: row.address,
+    joiningDate: row.joiningDate,
     active: row.active,
     balance: toNumber(row.balance),
     hasOpeningBalance: row.hasOpeningBalance,
@@ -260,6 +265,38 @@ export function toEmployeeSalaryAccrual(
     amount: toNumber(row.amount),
     note: row.note,
     status: row.status,
+    leaveDaysDeducted: row.leaveDaysDeducted !== null ? toNumber(row.leaveDaysDeducted) : null,
+    leaveAmountDeducted: row.leaveAmountDeducted !== null ? toNumber(row.leaveAmountDeducted) : null,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
+    voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
+    voidedBy: row.voidedByUid ? { uid: row.voidedByUid, email: row.voidedByEmail } : null,
+    voidReason: row.voidReason,
+  };
+}
+
+export function toEmployeeLeave(row: typeof employeeLeaves.$inferSelect): EmployeeLeave {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    leaveStartDate: row.leaveStartDate,
+    resumeDate: row.resumeDate,
+    dailyRateAtLeave: row.dailyRateAtLeave !== null ? toNumber(row.dailyRateAtLeave) : null,
+    note: row.note,
+    appliedToAccrualId: row.appliedToAccrualId,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: row.createdByUid ?? "",
+  };
+}
+
+export function toEmployeePayment(row: typeof employeePayments.$inferSelect): EmployeePayment {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    amount: toNumber(row.amount),
+    source: row.source,
+    givenBy: row.givenBy,
+    note: row.note,
     createdAt: row.createdAt.toISOString(),
     createdBy: { uid: row.createdByUid ?? "", email: row.createdByEmail },
     voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
