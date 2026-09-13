@@ -1,15 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Wordmark } from "@/components/wordmark";
 import { LogoutButton } from "@/components/logout-button";
 import { navItems } from "@/components/dashboard/nav-items";
 
-function NavLinks({ isOwner, onNavigate }: { isOwner: boolean; onNavigate?: () => void }) {
+const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed";
+
+function NavLinks({
+  isOwner,
+  collapsed = false,
+  onNavigate,
+}: {
+  isOwner: boolean;
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const visibleItems = navItems.filter((item) => !item.ownerOnly || isOwner);
 
@@ -22,15 +32,17 @@ function NavLinks({ isOwner, onNavigate }: { isOwner: boolean; onNavigate?: () =
             key={href}
             href={href}
             onClick={onNavigate}
+            title={collapsed ? label : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors",
+              collapsed ? "justify-center px-2" : "gap-3 px-3",
               isActive
                 ? "bg-sidebar-primary text-sidebar-primary-foreground"
                 : "text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
           >
             <Icon className="size-5 shrink-0" />
-            {label}
+            {collapsed ? null : label}
           </Link>
         );
       })}
@@ -48,18 +60,60 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop-only — the mobile drawer is untouched. Starts expanded on
+  // every render (including the server-rendered HTML, which has no
+  // access to localStorage) and is corrected right after mount, same
+  // pattern as any client-only preference read — this trades one brief
+  // flash on first paint for avoiding a hydration mismatch.
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true");
+    } catch {
+      // Private browsing / storage disabled — just stay expanded.
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      } catch {
+        // Ignore — the toggle still works for this session either way.
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-svh bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-sidebar py-4 md:flex">
-        <div className="px-4 pb-4">
-          <Wordmark onDark />
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col bg-sidebar py-4 transition-[width] duration-200 md:flex",
+          collapsed ? "w-16" : "w-64"
+        )}
+      >
+        <div className={cn("flex items-center pb-4", collapsed ? "flex-col gap-2 px-2" : "justify-between px-4")}>
+          <Wordmark onDark showText={!collapsed} />
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="shrink-0 rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            onClick={toggleCollapsed}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
         </div>
-        <NavLinks isOwner={isOwner} />
-        <div className="mt-auto px-4 pt-4">
-          <p className="mb-2 truncate text-xs text-sidebar-foreground/60">{email}</p>
-          <LogoutButton />
+        <NavLinks isOwner={isOwner} collapsed={collapsed} />
+        <div className={cn("mt-auto pt-4", collapsed ? "flex flex-col items-center px-2" : "px-4")}>
+          {collapsed ? null : (
+            <p className="mb-2 truncate text-xs text-sidebar-foreground/60">{email}</p>
+          )}
+          <LogoutButton iconOnly={collapsed} />
         </div>
       </aside>
 
