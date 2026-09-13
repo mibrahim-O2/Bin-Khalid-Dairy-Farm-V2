@@ -144,7 +144,7 @@ export function EmployeeDetailClient({
 
       <SalaryCard employeeId={employee.id} history={salaryHistory} />
 
-      <AccrualsList employeeId={employee.id} accruals={accruals} salaryHistory={salaryHistory} />
+      <AccrualsList employeeId={employee.id} accruals={accruals} salaryHistory={salaryHistory} isOwner={isOwner} />
 
       <StatementsCard employeeId={employee.id} statements={statements} />
     </div>
