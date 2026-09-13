@@ -27,7 +27,7 @@ import {
 import { formatAmount } from "@/lib/format-number";
 import { formatDate } from "@/lib/format-date";
 import type { SupplierStatement } from "@/types/supplier-statement";
-import { generateSupplierStatement } from "./statements/actions";
+import { deleteSupplierStatement, generateSupplierStatement } from "./statements/actions";
 
 function firstOfMonthIso() {
   const now = new Date();
@@ -107,13 +107,56 @@ function GenerateStatementDialog({ supplierId }: { supplierId: string }) {
   );
 }
 
+function DeleteStatementDialog({ statementId, onDeleted }: { statementId: string; onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    setDeleting(true);
+    setError(null);
+    const result = await deleteSupplierStatement({ statementId });
+    setDeleting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOpen(false);
+    onDeleted();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) setError(null); }}>
+      <DialogTrigger render={<Button variant="destructive" size="sm">Delete</Button>} />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete this statement?</DialogTitle>
+          <DialogDescription>
+            This removes the generated document only — it never affects the underlying purchases,
+            payments, or ledger transactions it was generated from. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button variant="destructive" disabled={deleting} onClick={handleConfirm}>
+            Yes, delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function StatementsCard({
   supplierId,
   statements,
+  isOwner,
 }: {
   supplierId: string;
   statements: SupplierStatement[];
+  isOwner: boolean;
 }) {
+  const router = useRouter();
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 pt-6">
@@ -128,12 +171,13 @@ export function StatementsCard({
                 <TableHead>Period</TableHead>
                 <TableHead>Closing balance</TableHead>
                 <TableHead>Generated</TableHead>
+                {isOwner ? <TableHead className="text-right">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
               {statements.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground">
+                  <TableCell colSpan={isOwner ? 4 : 3} className="text-center text-muted-foreground">
                     No statements yet.
                   </TableCell>
                 </TableRow>
@@ -152,6 +196,11 @@ export function StatementsCard({
                     <TableCell className="text-muted-foreground">
                       {formatDate(statement.createdAt)}
                     </TableCell>
+                    {isOwner ? (
+                      <TableCell className="text-right">
+                        <DeleteStatementDialog statementId={statement.id} onDeleted={() => router.refresh()} />
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))
               )}
