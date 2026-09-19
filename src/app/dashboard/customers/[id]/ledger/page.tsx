@@ -4,7 +4,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { isOwnerSession } from "@/lib/auth/owner";
 import { billLineItems, bills, customerLedgerTransactions, customers, payments } from "@/lib/db/schema";
 import { toBill, toCustomer, toCustomerLedgerTransaction } from "@/lib/db/mappers";
-import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
+import { getBusinessSettings, getInvoiceSettings, getPaymentSettings } from "@/lib/db/settings";
 import type { Bill } from "@/types/bill";
 import type { CustomerLedgerTransaction } from "@/types/customer";
 import { LedgerViewClient, type LedgerMonthGroup } from "./ledger-view-client";
@@ -20,7 +20,7 @@ export default async function CustomerLedgerPage({ params }: { params: Promise<{
   const session = await getServerSession();
   const isOwner = session ? isOwnerSession(session) : false;
 
-  const [[customerRow], transactionRows, businessInfo, invoiceSettings] = await Promise.all([
+  const [[customerRow], transactionRows, businessInfo, invoiceSettings, paymentSettings] = await Promise.all([
     db.select().from(customers).where(eq(customers.id, customerId)),
     db
       .select()
@@ -29,6 +29,7 @@ export default async function CustomerLedgerPage({ params }: { params: Promise<{
       .orderBy(asc(customerLedgerTransactions.createdAt)),
     getBusinessSettings(),
     getInvoiceSettings(),
+    getPaymentSettings(),
   ]);
 
   const billIds = [
@@ -128,6 +129,7 @@ export default async function CustomerLedgerPage({ params }: { params: Promise<{
       months={[...monthsByKey.values()]}
       businessInfo={businessInfo}
       invoiceSettings={invoiceSettings}
+      paymentSettings={paymentSettings}
       isOwner={isOwner}
     />
   );
