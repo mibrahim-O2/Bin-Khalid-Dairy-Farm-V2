@@ -98,13 +98,16 @@ export default async function Home() {
           </div>
 
           <div className="flex justify-center lg:justify-end">
+            {/* Pre-composited onto a light disc so the transparent,
+                dark-rimmed logo stays visible on a dark background (see
+                Wordmark for why this is baked into the image). */}
             <Image
-              src="/logoDairy.png"
+              src="/logoDairy-disc.png"
               alt="Bin Khalid Dairy Farm"
-              width={1254}
-              height={1254}
+              width={768}
+              height={768}
               priority
-              className="hero-logo size-56 object-contain sm:size-72 lg:size-80"
+              className="hero-logo size-56 object-contain drop-shadow-lg sm:size-72 lg:size-80"
             />
           </div>
         </section>

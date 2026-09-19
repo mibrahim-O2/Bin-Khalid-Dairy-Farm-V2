@@ -14,11 +14,16 @@ export function Wordmark({
 }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
+      {/* Uses the logo pre-composited onto a light disc: the original is a
+          transparent PNG with a dark-green rim that vanishes on a dark
+          background (browser dark / force-dark mode, dark sidebar), and
+          a CSS background disc gets inverted by force-dark, an image
+          doesn't. */}
       <Image
-        src="/logoDairy.png"
+        src="/logoDairy-disc.png"
         alt="Bin Khalid Dairy Farm"
-        width={1254}
-        height={1254}
+        width={768}
+        height={768}
         priority
         className="size-9 shrink-0 object-contain"
       />
