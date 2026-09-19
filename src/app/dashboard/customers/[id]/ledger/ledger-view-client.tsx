@@ -18,9 +18,10 @@ import {
 } from "@/components/ui/table";
 import type { Bill } from "@/types/bill";
 import type { Customer, CustomerLedgerTransaction } from "@/types/customer";
-import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types/settings";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { CustomerStatementTemplate } from "@/components/invoice/customer-statement-template";
+import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { EditPaymentDialog } from "./edit-payment-dialog";
 import { DeleteBillDialog } from "../bills/[billId]/delete-bill-dialog";
@@ -54,28 +55,58 @@ const typeLabels: Record<CustomerLedgerTransaction["type"], string> = {
 
 function RowActions({
   customerId,
+  customer,
   row,
   isOwner,
+  businessInfo,
+  paymentSettings,
+  invoiceSettings,
 }: {
   customerId: string;
+  customer: Customer;
   row: LedgerRow;
   isOwner: boolean;
+  businessInfo: BusinessSettings;
+  paymentSettings: PaymentSettings;
+  invoiceSettings: InvoiceSettings;
 }) {
-  if (!isOwner) return null;
   const { transaction } = row;
   if (transaction.type === "bill" && transaction.billId) {
     return (
-      <div className="flex flex-wrap justify-end gap-2">
-        <Link
-          href={`/dashboard/customers/${customerId}/bills/${transaction.billId}`}
-          className="text-sm text-primary hover:underline"
-        >
-          Edit
-        </Link>
-        <DeleteBillDialog billId={transaction.billId} customerId={customerId} />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Share/Save THIS bill's own invoice — not the month statement
+            in the section header. Available to any admin, unlike
+            Edit/Delete below. */}
+        {row.bill ? (
+          <ShareButtons
+            fileName={`${row.bill.billNumber ?? "bill"}.png`}
+            shareText={`Assalam-o-Alaikum ${customer.name}, please find your bill ${row.bill.billNumber ?? ""} from Bin Khalid Dairy Farm attached below. Total payable: Rs. ${formatAmount(row.bill.totalPayable ?? row.bill.subtotal)}. Thank you!`}
+            saveLabel="Save Bill"
+          >
+            <BillInvoiceTemplate
+              bill={row.bill}
+              customer={customer}
+              businessInfo={businessInfo}
+              paymentSettings={paymentSettings}
+              invoiceSettings={invoiceSettings}
+            />
+          </ShareButtons>
+        ) : null}
+        {isOwner ? (
+          <>
+            <Link
+              href={`/dashboard/customers/${customerId}/bills/${transaction.billId}`}
+              className="text-sm text-primary hover:underline"
+            >
+              Edit
+            </Link>
+            <DeleteBillDialog billId={transaction.billId} customerId={customerId} />
+          </>
+        ) : null}
       </div>
     );
   }
+  if (!isOwner) return null;
   if (transaction.type === "payment" && transaction.paymentId && row.rawPayment) {
     return (
       <div className="flex flex-wrap justify-end gap-2">
@@ -98,6 +129,7 @@ function MonthSection({
   group,
   businessInfo,
   invoiceSettings,
+  paymentSettings,
   isOwner,
 }: {
   customerId: string;
@@ -105,6 +137,7 @@ function MonthSection({
   group: LedgerMonthGroup;
   businessInfo: BusinessSettings;
   invoiceSettings: InvoiceSettings;
+  paymentSettings: PaymentSettings;
   isOwner: boolean;
 }) {
   const billEntries = group.rows
@@ -126,12 +159,10 @@ function MonthSection({
               a persisted "statement" concept the way suppliers do (bills
               themselves are the shareable per-transaction document), so
               there's no separate "generate" action here — just save/share. */}
-          <WhatsAppShareButtons
+          <ShareButtons
             fileName={`${customer.name}-${group.monthKey}.png`}
-            whatsappNumber={customer.whatsappNumber ?? customer.phone ?? null}
-            whatsappMessage={`Assalam-o-Alaikum ${customer.name}, please find your account statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
-            saveLabel="Save Bill"
-            whatsappLabel="Share on WhatsApp"
+            shareText={`Assalam-o-Alaikum ${customer.name}, please find your account statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
+            saveLabel="Save Statement"
           >
             <CustomerStatementTemplate
               customerName={customer.name}
@@ -144,7 +175,7 @@ function MonthSection({
               businessInfo={businessInfo}
               invoiceSettings={invoiceSettings}
             />
-          </WhatsAppShareButtons>
+          </ShareButtons>
         </div>
 
         <div className="hidden overflow-x-auto md:block">
@@ -190,7 +221,7 @@ function MonthSection({
                         {formatAmount(runningBalance)}
                       </TableCell>
                       <TableCell className="align-top text-right">
-                        <RowActions customerId={customerId} row={row} isOwner={isOwner} />
+                        <RowActions customerId={customerId} customer={customer} row={row} isOwner={isOwner} businessInfo={businessInfo} paymentSettings={paymentSettings} invoiceSettings={invoiceSettings} />
                       </TableCell>
                     </TableRow>
                   );
@@ -241,7 +272,7 @@ function MonthSection({
                     ) : null}
                     {index === 0 ? (
                       <TableCell className="align-top text-right" rowSpan={rowCount}>
-                        <RowActions customerId={customerId} row={row} isOwner={isOwner} />
+                        <RowActions customerId={customerId} customer={customer} row={row} isOwner={isOwner} businessInfo={businessInfo} paymentSettings={paymentSettings} invoiceSettings={invoiceSettings} />
                       </TableCell>
                     ) : null}
                   </TableRow>
@@ -280,7 +311,7 @@ function MonthSection({
                   <span className="text-muted-foreground">Balance</span>
                   <span className="font-medium text-foreground">{formatAmount(runningBalance)}</span>
                 </div>
-                <RowActions customerId={customerId} row={row} isOwner={isOwner} />
+                <RowActions customerId={customerId} customer={customer} row={row} isOwner={isOwner} businessInfo={businessInfo} paymentSettings={paymentSettings} invoiceSettings={invoiceSettings} />
               </div>
             );
           })}
@@ -296,6 +327,7 @@ export function LedgerViewClient({
   months,
   businessInfo,
   invoiceSettings,
+  paymentSettings,
   isOwner,
 }: {
   customerId: string;
@@ -303,6 +335,7 @@ export function LedgerViewClient({
   months: LedgerMonthGroup[];
   businessInfo: BusinessSettings;
   invoiceSettings: InvoiceSettings;
+  paymentSettings: PaymentSettings;
   isOwner: boolean;
 }) {
   const router = useRouter();
@@ -381,6 +414,7 @@ export function LedgerViewClient({
             group={group}
             businessInfo={businessInfo}
             invoiceSettings={invoiceSettings}
+            paymentSettings={paymentSettings}
             isOwner={isOwner}
           />
         ))

@@ -14,7 +14,7 @@ const BRAND_GREEN = "#1B4332";
  * payment-accounts section (an internal accounts-payable document, not
  * customer-facing). English-only, same as the supplier/employee
  * statements. Rendered off-screen and rasterized to a PNG by
- * WhatsAppShareButtons — never shown as part of the normal dashboard UI.
+ * ShareButtons — never shown as part of the normal dashboard UI.
  */
 export function PurchaseInvoiceTemplate({
   purchase,

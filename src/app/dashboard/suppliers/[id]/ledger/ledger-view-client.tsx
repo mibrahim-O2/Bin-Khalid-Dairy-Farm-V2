@@ -19,7 +19,7 @@ import {
 import type { Purchase } from "@/types/purchase";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { SupplierStatementTemplate } from "@/components/invoice/supplier-statement-template";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { EditPaymentDialog } from "./edit-payment-dialog";
@@ -149,12 +149,9 @@ function MonthSection({
                 ad-hoc statement built from this month's already-loaded
                 rows, not a persisted record (Generate Statement above is
                 the persisted-snapshot action). */}
-            <WhatsAppShareButtons
+            <ShareButtons
               fileName={`${supplier.name}-${group.monthKey}.png`}
-              whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
-              whatsappMessage={`Assalam-o-Alaikum, please find our account statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
-              saveLabel="Save"
-              whatsappLabel="Share on WhatsApp"
+              shareText={`Assalam-o-Alaikum, please find our account statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
             >
               <SupplierStatementTemplate
                 statement={{
@@ -174,7 +171,7 @@ function MonthSection({
                 businessInfo={businessInfo}
                 invoiceSettings={invoiceSettings}
               />
-            </WhatsAppShareButtons>
+            </ShareButtons>
           </div>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

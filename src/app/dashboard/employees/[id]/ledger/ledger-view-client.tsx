@@ -21,7 +21,7 @@ import type { EmployeeSalaryHistoryEntry } from "@/types/employee-salary";
 import type { EmployeeSalaryAccrual } from "@/types/salary-accrual";
 import type { EmployeePayment } from "@/types/employee-payment";
 import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { EmployeeStatementTemplate } from "@/components/invoice/employee-statement-template";
 import { EditAccrualDialog } from "../edit-accrual-dialog";
 import { DeleteAccrualDialog } from "../delete-accrual-dialog";
@@ -143,12 +143,9 @@ function MonthSection({
                 rows, not a persisted record (Generate Statement above is
                 the persisted-snapshot action) — same pattern as the
                 Supplier/Customer ledgers' per-month share buttons. */}
-            <WhatsAppShareButtons
+            <ShareButtons
               fileName={`${employeeName}-${group.monthKey}.png`}
-              whatsappNumber={employeeWhatsappNumber ?? employeePhone ?? null}
-              whatsappMessage={`Assalam-o-Alaikum ${employeeName}, please find your salary statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. — Bin Khalid Dairy Farm`}
-              saveLabel="Save"
-              whatsappLabel="Share on WhatsApp"
+              shareText={`Assalam-o-Alaikum ${employeeName}, please find your salary statement attached below for ${group.monthLabel}. Closing balance: Rs. ${formatAmount(group.closingBalance)}. — Bin Khalid Dairy Farm`}
             >
               <EmployeeStatementTemplate
                 statement={{
@@ -166,7 +163,7 @@ function MonthSection({
                 businessInfo={businessInfo}
                 invoiceSettings={invoiceSettings}
               />
-            </WhatsAppShareButtons>
+            </ShareButtons>
           </div>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

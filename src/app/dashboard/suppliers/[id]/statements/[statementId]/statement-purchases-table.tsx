@@ -15,7 +15,7 @@ import { formatDate } from "@/lib/format-date";
 import type { Purchase } from "@/types/purchase";
 import type { Supplier, SupplierLedgerTransaction } from "@/types/supplier";
 import type { BusinessSettings, InvoiceSettings } from "@/types/settings";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { PurchaseInvoiceTemplate } from "@/components/invoice/purchase-invoice-template";
 
 function SaveBillButtons({
@@ -30,10 +30,9 @@ function SaveBillButtons({
   invoiceSettings: InvoiceSettings;
 }) {
   return (
-    <WhatsAppShareButtons
+    <ShareButtons
       fileName={`${supplier.name}-purchase-${purchase.purchaseDate}.png`}
-      whatsappNumber={supplier.whatsappNumber ?? supplier.phone ?? null}
-      whatsappMessage={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
+      shareText={`Assalam-o-Alaikum, please find the purchase document attached for ${formatDate(purchase.purchaseDate)}. Total payable: Rs. ${formatAmount(purchase.totalPayable ?? purchase.subtotal)}. Thank you — Bin Khalid Dairy Farm`}
     >
       <PurchaseInvoiceTemplate
         purchase={purchase}
@@ -41,7 +40,7 @@ function SaveBillButtons({
         businessInfo={businessInfo}
         invoiceSettings={invoiceSettings}
       />
-    </WhatsAppShareButtons>
+    </ShareButtons>
   );
 }
 

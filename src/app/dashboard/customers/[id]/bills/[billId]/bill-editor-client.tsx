@@ -34,7 +34,7 @@ import type { BusinessSettings, InvoiceSettings, PaymentSettings } from "@/types
 import { finalizeBill, updateDraftBill, updateFinalizedBill } from "../actions";
 import { getMilkAutoFillDefaults } from "../../../../milk-record/actions";
 import { DeleteBillDialog } from "./delete-bill-dialog";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { BillInvoiceTemplate } from "@/components/invoice/bill-invoice-template";
 
 const statusVariant: Record<BillStatus, "default" | "secondary" | "destructive"> = {
@@ -626,10 +626,9 @@ export function BillEditorClient({
               )
             ) : null}
             {isOwner ? <DeleteBillDialog billId={bill.id} customerId={customerId} /> : null}
-            <WhatsAppShareButtons
+            <ShareButtons
               fileName={`${bill.billNumber ?? "bill"}.png`}
-              whatsappNumber={customer.whatsappNumber ?? customer.phone}
-              whatsappMessage={`Assalam-o-Alaikum ${customer.name}, please find your bill ${bill.billNumber ?? ""} from Bin Khalid Dairy Farm attached below. Total payable: Rs. ${formatAmount(bill.totalPayable ?? bill.subtotal)}. Thank you!`}
+              shareText={`Assalam-o-Alaikum ${customer.name}, please find your bill ${bill.billNumber ?? ""} from Bin Khalid Dairy Farm attached below. Total payable: Rs. ${formatAmount(bill.totalPayable ?? bill.subtotal)}. Thank you!`}
             >
               <BillInvoiceTemplate
                 bill={bill}
@@ -638,7 +637,7 @@ export function BillEditorClient({
                 paymentSettings={paymentSettings}
                 invoiceSettings={invoiceSettings}
               />
-            </WhatsAppShareButtons>
+            </ShareButtons>
           </>
         ) : null}
       </div>

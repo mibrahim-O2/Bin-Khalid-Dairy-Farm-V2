@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import type { SupplierLedgerTransaction } from "@/types/supplier";
 import type { Purchase } from "@/types/purchase";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { SupplierStatementTemplate } from "@/components/invoice/supplier-statement-template";
 import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 import { StatementPurchasesTable } from "./statement-purchases-table";
@@ -114,10 +114,9 @@ export default async function SupplierStatementPage({
             Generated {formatDate(statement.createdAt)} for {statement.supplierName}
           </p>
         </div>
-        <WhatsAppShareButtons
+        <ShareButtons
           fileName={`${statement.supplierName}-statement.png`}
-          whatsappNumber={supplier?.whatsappNumber ?? supplier?.phone ?? null}
-          whatsappMessage={`Assalam-o-Alaikum, please find our account statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
+          shareText={`Assalam-o-Alaikum, please find our account statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. Thank you — Bin Khalid Dairy Farm`}
         >
           <SupplierStatementTemplate
             statement={statement}
@@ -126,7 +125,7 @@ export default async function SupplierStatementPage({
             businessInfo={businessInfo}
             invoiceSettings={invoiceSettings}
           />
-        </WhatsAppShareButtons>
+        </ShareButtons>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

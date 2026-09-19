@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { EmployeeLedgerTransaction } from "@/types/employee";
-import { WhatsAppShareButtons } from "@/components/invoice/whatsapp-share-buttons";
+import { ShareButtons } from "@/components/invoice/share-buttons";
 import { EmployeeStatementTemplate } from "@/components/invoice/employee-statement-template";
 import { getBusinessSettings, getInvoiceSettings } from "@/lib/db/settings";
 
@@ -68,13 +68,12 @@ export default async function EmployeeStatementPage({
             Generated {formatDate(statement.createdAt)} for {statement.employeeName}
           </p>
         </div>
-        <WhatsAppShareButtons
+        <ShareButtons
           fileName={`${statement.employeeName}-statement.png`}
-          whatsappNumber={employee?.whatsappNumber ?? employee?.phone ?? null}
-          whatsappMessage={`Assalam-o-Alaikum ${statement.employeeName}, please find your salary statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. — Bin Khalid Dairy Farm`}
+          shareText={`Assalam-o-Alaikum ${statement.employeeName}, please find your salary statement attached below for ${formatDate(statement.startDate)} to ${formatDate(statement.endDate)}. Closing balance: Rs. ${formatAmount(statement.closingBalance)}. — Bin Khalid Dairy Farm`}
         >
           <EmployeeStatementTemplate statement={statement} businessInfo={businessInfo} invoiceSettings={invoiceSettings} />
-        </WhatsAppShareButtons>
+        </ShareButtons>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
